@@ -397,8 +397,11 @@ server <- function(input, output, session) {
   useShinyalert(force = TRUE)
   
   output$metabo_tag <- renderUI({
+    
     req(credentials()$user_auth)
+    
     tagList(
+      
       # quant panel head ----
       div(style = "text-align: center; background-image: url('texturebg.png');padding: 60px; s", display='block',
           h1("Metabonomics analysis",style="font-family: Georgia; color: #FFFFFF"),
@@ -478,7 +481,15 @@ server <- function(input, output, session) {
         
       ),
       br(),
+      br(),
+      
+      column(h3("Release Version:"),
+             verbatimTextOutput("ReleaseVersion"),
+             offset=2,width = 8),
+      
+      br(),
       br()
+      
     )
   })
   
@@ -601,6 +612,19 @@ server <- function(input, output, session) {
       file.copy(paste0(path_prefix2,'/data/usrdata/',report_id,'/report/report.zip'), file)
       
     }
+    
+  )
+  
+  output$ReleaseVersion<-renderPrint(
+    
+    cat(
+      "2025.10.10 version 1.0.5 Add the function of filling in the name based on the annotation ID.",
+      "2025.09.22 version 1.0.4 Fix kegg enrichment doesn't produce all pathways bug.",
+      "2025.09.15 version 1.0.3 Add NormAE QC normalization function.",
+      "2025.09.08 version 1.0.2 Add RLSC QC normalization function.",
+      "2025.09.01 version 1.0.1 Add LMSD and HMDB database class function.",
+      "2025.08.15 version 1.0.0 Metabolite analysis website launch",
+      sep="\n")
     
   )
   
