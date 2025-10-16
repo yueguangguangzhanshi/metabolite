@@ -618,6 +618,7 @@ server <- function(input, output, session) {
   output$ReleaseVersion<-renderPrint(
     
     cat(
+      "2025.10.16 version 1.0.6 1) Add pos and neg ion data header validate warning windows. 2) Add word report",
       "2025.10.10 version 1.0.5 Add the function of filling in the name based on the annotation ID.",
       "2025.09.22 version 1.0.4 Fix kegg enrichment doesn't produce all pathways bug.",
       "2025.09.15 version 1.0.3 Add NormAE QC normalization function.",
