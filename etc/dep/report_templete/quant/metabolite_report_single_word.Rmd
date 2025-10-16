@@ -1,0 +1,751 @@
+---
+title: "Metabonomics Analysis"
+output:
+  word_document:
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    fig_caption: true
+    reference_docx: styles.docx
+# HTML 专属设置移除/忽略
+# classoption: "hyperref,"
+# css: './css.css'
+---
+
+```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
+
+# 全局 knitr 选项：不显示代码/消息，图居中
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dpi = 300)
+
+# —— 字体设置（可按需改）——
+# 正文/图表用“宋体”，英文字母/数字也兼容；若没装宋体则回退 Arial
+BODY_FONT   <- "Times New Roman"            # 宋体
+FALLBACK    <- "Times New Roman"
+TABLE_FONT  <- BODY_FONT
+PLOT_FONT   <- BODY_FONT
+
+# 若装了 showtext，启用以保证图片中的字体也能正常渲染
+if (requireNamespace("showtext", quietly = TRUE)) {
+  showtext::showtext_auto()
+}
+
+# 让 ggplot 使用统一字体
+theme_set(ggplot2::theme_minimal(base_family = PLOT_FONT, base_size = 11))
+
+# —— 基础包 —— 
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(readxl)
+library(stringr)
+
+# —— Word 表格：flextable/officer —— 
+library(flextable)
+library(officer)
+
+# 可选：若存在 PDF 图片、需转 PNG 时使用
+.has_magick <- requireNamespace("magick", quietly = TRUE)
+
+# 放在 setup 里（或函数前面）
+TABLE_FONT     <- get0("TABLE_FONT", ifnotfound = "Times New Roman")
+DOC_BODY_WIDTH <- get0("DOC_BODY_WIDTH", ifnotfound = 6.5)  # A4 纵向约 6.5 in
+
+# 简单的列宽估算器：根据列名与前若干行字符数估宽（英寸）
+.estimate_col_width_in <- function(x, header, sample_n = 50, base_ppi = 10) {
+  # 粗略：~ 每 10 个字符 ~ 1 英寸（等宽近似），最小 0.9 英寸
+  vals <- if (is.character(x)) head(x, sample_n) else as.character(head(x, sample_n))
+  clen <- max(nchar(c(header, vals)), na.rm = TRUE)
+  width_in <- max(0.9, clen / base_ppi)
+  # 上限设得别太夸张，留给 fit_to_width 去统一压缩
+  pmin(width_in, 3.8)
+}
+
+print_table <- function(
+  df, caption = NULL, col.names = NULL,
+  prefer_wide_cols = c("参数名称", "参数信息", "Parameter", "Name"),
+  first_col_min = 2.4,       # 首列最低宽度（英寸）
+  other_col_min = 1.0,       # 其他列最低宽度
+  prefer_extra = 0.6,        # 给“优先放宽列”加的额外宽度
+  max_width_in = DOC_BODY_WIDTH
+) {
+  if (is.null(df) || !is.data.frame(df)) return(invisible(NULL))
+  if (!is.null(col.names)) colnames(df) <- col.names
+
+  is_num <- vapply(df, is.numeric, logical(1))
+
+  # 1) 先建表 + 基础样式
+  ft <- flextable::flextable(df)
+  ft <- flextable::theme_vanilla(ft)
+  ft <- flextable::fontsize(ft, size = 10.5, part = "all")
+  ft <- flextable::font(ft, part = "all", fontname = TABLE_FONT)
+  ft <- flextable::bold(ft, part = "header", bold = TRUE)
+  ft <- flextable::bg(ft, part = "header", bg = "#F2F2F2")
+  ft <- flextable::align(ft, align = "left", part = "all")
+  if (any(is_num)) ft <- flextable::align(ft, j = which(is_num), align = "right", part = "all")
+
+  # 2) 先让 flextable 按内容估一次（不可靠时也能给出起点）
+  ft <- flextable::autofit(ft)
+
+  # 3) 用字符数做一个“保底+偏置”的列宽估计，再统一设置
+  nC <- ncol(df); cn <- colnames(df)
+  est <- numeric(nC)
+  for (j in seq_len(nC)) {
+    est[j] <- .estimate_col_width_in(df[[j]], header = cn[j])
+  }
+  # 最小宽度约束
+  est[1] <- max(est[1], first_col_min)
+  if (nC > 1) est[2:nC] <- pmax(est[2:nC], other_col_min)
+
+  # 优先放宽的列加一点额外宽度
+  hit <- which(cn %in% prefer_wide_cols)
+  if (length(hit)) est[hit] <- est[hit] + prefer_extra
+
+  # 按估算宽度施加（不会用到未导出 API）
+  for (j in seq_len(nC)) {
+    ft <- flextable::width(ft, j = j, width = est[j])
+  }
+
+  # 4) 将总宽度等比压回页宽，避免溢出
+  ft <- flextable::fit_to_width(ft, max_width = max_width_in)
+
+  # 5) 数值格式化
+  if (any(is_num)) {
+    col_max_abs <- vapply(df[is_num], function(x) suppressWarnings(max(abs(x), na.rm = TRUE)), numeric(1))
+    small_idx <- which(is_num)[which(col_max_abs <= 1 | is.na(col_max_abs))]
+    big_idx   <- setdiff(which(is_num), small_idx)
+    if (length(small_idx)) ft <- flextable::colformat_num(ft, j = small_idx, digits = 3)
+    if (length(big_idx))   ft <- flextable::colformat_num(ft, j = big_idx,  digits = 2)
+  }
+
+  ft <- flextable::line_spacing(ft, space = 1.0, part = "all")
+  ft <- flextable::valign(ft, valign = "center", part = "all")
+  ft <- flextable::set_table_properties(ft, layout = "autofit")
+
+  if (!is.null(caption)) {
+    ft <- flextable::set_caption(
+      ft,
+      caption = flextable::as_paragraph(caption),
+      autonum = officer::run_autonum(seq_id = "tab", pre_label = "Table ", bkm = FALSE)
+    )
+  }
+
+  ft
+}
+
+# 统一插图：优先 PNG/JPG；若仅有 PDF 且安装了 magick，则临时转成 PNG 再 include
+# 放在 setup chunk，替换原有 include_img() ----
+.has_pdftools <- requireNamespace("pdftools", quietly = TRUE)
+
+# —— 静音包装：不把 pdf_convert 的进度写到文档里 —— 
+quiet_pdf_convert <- function(pdf, dpi, out) {
+  if (!requireNamespace("pdftools", quietly = TRUE)) return(NULL)
+  res <- try({
+    zz <- file(nullfile(), open = "wt")
+    sink(zz); sink(zz, type = "message")
+    on.exit({ sink(); sink(type = "message"); close(zz) }, add = TRUE)
+    suppressWarnings(suppressMessages(
+      pdftools::pdf_convert(pdf, format = "png", dpi = dpi, filenames = out)
+    ))
+  }, silent = TRUE)
+  if (inherits(res, "try-error")) NULL else out
+}
+
+# 可在 setup 里按需改这两个页面尺寸（单位：英寸）
+PAGE_WIDTH_IN  <- get0("PAGE_WIDTH_IN",  ifnotfound = 6.5)  # A4 竖版正文可用宽度
+PAGE_HEIGHT_IN <- get0("PAGE_HEIGHT_IN", ifnotfound = 9.0)  # A4 竖版正文可用高度
+PAGE_MARGIN_IN <- get0("PAGE_MARGIN_IN", ifnotfound = 0.3)  # 内边距，避免贴边
+
+# 可选：如果你在 reference_docx 里定义了一个段落样式用来“居中图片”，填这里的样式名
+DOCX_CENTER_STYLE <- get0("DOCX_CENTER_STYLE", ifnotfound = NULL) # 例如 "FigureCentered"
+
+include_img <- function(png_path = NULL, pdf_path = NULL, out.width = "6.5in") {
+  # 0) 选择源文件；PDF -> PNG 的鲁棒转换（沿用你原有逻辑）
+  .has_pdftools <- requireNamespace("pdftools", quietly = TRUE)
+  .has_magick   <- requireNamespace("magick",   quietly = TRUE)
+
+  chosen <- NULL
+  if (!is.null(png_path) && file.exists(png_path)) {
+    chosen <- png_path
+  } else if (!is.null(pdf_path) && file.exists(pdf_path)) {
+    if (.has_pdftools) {
+      for (dpi in c(180, 150, 120, 96, 72)) {
+        f <- tryCatch(
+          quiet_pdf_convert(pdf_path, format = "png", dpi = dpi, filenames = tempfile(fileext = ".png")),
+          error = function(e) NULL
+        )
+        if (!is.null(f)) { chosen <- f; break }
+      }
+    }
+    if (is.null(chosen) && .has_magick) {
+      for (density in c(120, 96, 72)) {
+        ok <- try({
+          img <- magick::image_read_pdf(pdf_path, density = density)[1]
+          tmp <- tempfile(fileext = ".png")
+          magick::image_write(img, path = tmp, format = "png")
+          chosen <- tmp
+        }, silent = TRUE)
+        if (!inherits(ok, "try-error")) break
+      }
+    }
+  }
+
+  if (is.null(chosen)) {
+    # 找不到文件/转换失败：插入可见占位，避免“整块消失”
+    miss <- if (!is.null(png_path)) png_path else pdf_path
+    cat(sprintf("\n\n**[未能插入图片] %s**\n\n", miss))
+    return(invisible(NULL))
+  }
+
+  # 1) 读取像素尺寸（若 magick 不可用，则后续按 out.width + 页高约束做兜底）
+  px_w <- px_h <- NA_real_
+  if (.has_magick) {
+    ii <- tryCatch(magick::image_info(magick::image_read(chosen)), error = function(e) NULL)
+    if (!is.null(ii)) {
+      px_w <- ii$width; px_h <- ii$height
+    }
+  }
+
+  # 2) 解析 out.width（支持 "6.5in" / "80%" / 数字字符串）
+  parse_width_in <- function(x) {
+    if (is.numeric(x)) return(as.numeric(x))
+    x <- as.character(x)
+    if (grepl("%$", x)) {
+      p <- as.numeric(sub("%$", "", x))
+      return((PAGE_WIDTH_IN - 2 * PAGE_MARGIN_IN) * p / 100)
+    }
+    if (grepl("in$", x)) return(as.numeric(sub("in$", "", x)))
+    suppressWarnings(as.numeric(x)) # 纯数字（按英寸）
+  }
+  req_w_in <- parse_width_in(out.width)
+  if (is.na(req_w_in) || req_w_in <= 0) req_w_in <- PAGE_WIDTH_IN - 2 * PAGE_MARGIN_IN
+
+  # 3) 计算“页内不超高”的安全宽度（保持比例、不放大）
+  safe_w_in <- req_w_in
+  if (is.finite(px_w) && is.finite(px_h) && px_w > 0 && px_h > 0) {
+    # 根据请求宽度推导高度
+    req_h_in <- req_w_in * (px_h / px_w)
+    max_h_in <- PAGE_HEIGHT_IN - 2 * PAGE_MARGIN_IN
+    if (req_h_in > max_h_in) {
+      # 超高 → 按高度反推新的安全宽度
+      safe_w_in <- max_h_in * (px_w / px_h)
+      # 不要超过页宽
+      safe_w_in <- min(safe_w_in, PAGE_WIDTH_IN - 2 * PAGE_MARGIN_IN)
+    }
+  } else {
+    # 取不到尺寸：宽度不超过页宽
+    safe_w_in <- min(req_w_in, PAGE_WIDTH_IN - 2 * PAGE_MARGIN_IN)
+  }
+
+  # 4) 输出 Markdown 图片（与原实现一致），保持 results='asis' 的工作方式
+  #    可选：用 docx 自定义段落样式来实现“居中”
+  if (!is.null(DOCX_CENTER_STYLE)) {
+    cat(sprintf("::: {custom-style=\"%s\"}\n", DOCX_CENTER_STYLE))
+    cat(sprintf("![](%s){width=%.2fin}\n", chosen, safe_w_in))
+    cat(":::\n\n")
+  } else {
+    # 直接输出（是否居中取决于 Word 默认/模板样式）
+    cat(sprintf("![](%s){width=%.2fin}\n\n", chosen, safe_w_in))
+  }
+
+  invisible(chosen)
+}
+
+# —— 仅保留第一组 —— 
+if (exists("group.data")) group.data <- head(group.data, 1)
+
+# —— 缺省占位，防 knit 失败 —— 
+safe_obj <- function(x, default) if (exists(x)) get(x, envir = .GlobalEnv) else default
+para_data     <- safe_obj("para_data", data.frame(参数名称=character(), 参数值=character()))
+final_summary <- safe_obj("final_summary", data.frame())
+para          <- safe_obj("para", list(info=list(project_id=NA)))
+report_path   <- safe_obj("report_path", ".")
+sum_pca       <- safe_obj("sum_pca", data.frame())
+sum_plsda     <- safe_obj("sum_plsda", data.frame())
+sum_oplsda    <- safe_obj("sum_oplsda", data.frame())
+ion_type      <- safe_obj("ion_type", "POS")
+sample.data   <- safe_obj("sample.data", list(POS=data.frame(Condition=character())))
+input         <- safe_obj("input", list(
+  project_name = "",
+  organ_info = "",
+  miss.value.handle.cutoff = 50,
+  miss.value.fill = "zero",
+  normalized.handle.method = "median",
+  rsd.cutoff = 0.3
+))
+
+flextable::set_flextable_defaults(
+  font.family   = "Times New Roman",
+  font.size     = 10.5,
+  theme.fun     = flextable::theme_vanilla,
+  table.layout  = "autofit",    # 让表格默认按内容布局
+  padding       = 3
+)
+
+```
+
+\newpage
+
+**Project name：** `r input$project_name`  
+**Project ID：** `r para$info$project_id`  
+**User：** `r input$organ_info`
+
+```{r plot, echo=FALSE, results='asis'}
+
+cat("# 数据总览\n\n")
+
+cat("## 参数信息\n\n")
+print_table(para_data[-which(rownames(para_data)=="选择的列数"),,drop=F] %>% tibble::rownames_to_column(var = "参数名称"),
+            col.names = c("参数名称","参数值"))
+
+cat("\n\n## 鉴定信息\n\n")
+# if (nrow(final_summary) > 0) {
+  tmp <- final_summary[, 2:6] |> dplyr::distinct()
+  print_table(tmp)
+  cat("\n- **ion_type**: 离子的类型\n- **raw_feature_num**: 原始特征数量\n- **remove_missing_num**: 移除缺失值后的数量\n- **preprocess_feature_num**: 预处理后的特征数量\n- **preprocess_feature_num_name**: 预处理后的有名称的特征数量\n\n")
+# }
+
+cat("## 差异信息\n\n")
+tmp2 <- final_summary[, -c(3:6), drop=FALSE]
+# print_table(tmp2)
+ft <- flextable::qflextable(tmp2)
+ft <- flextable::autofit(ft)
+ft <- flextable::fit_to_width(ft, max_width = 6.5)
+ft
+cat("\n- **compare**: 分组信息\n- **ion_type**: 离子的类型\n- **diff_feature**: 差异特征数量\n- **diff_feature_up**: 差异特征上调数量\n- **diff_feature_down**: 差异特征下调数量\n- **diff_feature_name**: 差异代谢物的数量\n- **diff_feature_name_up**: 差异代谢物上调数量\n- **diff_feature_name_down**: 差异代谢物下调数量\n\n")
+
+cat("# 数据预处理\n\n")
+cat(paste0(
+  "在进行统计分析之前，需要对原始数据进行一系列的预处理。数据预处理包括缺失值的剔除、填充、归一化等，详细步骤如下：",
+  "1) 缺失值的过滤：保留所有样本中非零值", input[['miss.value.handle.cutoff']], "%以上的特征峰；",
+  "2) 缺失值填充：原始矩阵中", names(para_sum$fill)[which(para_sum$fill==input$miss.value.fill)], " 填补缺失值；",
+  "3) QC RSD过滤：删除QC样本RSD > ", input$rsd.cutoff*100, "% 的特征峰；",
+  "4) 归一化：样本采用 ", names(para_sum$normalize)[which(para_sum$normalize==input$normalized.handle.method)], " 进行归一化。",
+  " 预处理详细数据表：\n\n"
+))
+
+cat('* > 打开缺失值过滤数据表: `./2.数据预处理/1.缺失值过滤/组内缺失值过滤数据_single.xlsx`\n\n')
+cat('* > 打开缺失值填充数据表: `./2.数据预处理/2.缺失值填充/缺失值填充数据_single.xlsx`\n\n')
+cat('* > 打开RSD过滤数据表: `./2.数据预处理/3.RSD过滤/RSD过滤数据_single.xlsx`\n\n')
+cat('* > 打开归一化数据表: `./2.数据预处理/4.归一化/归一化处理数据_single.xlsx`\n\n')
+
+cat("\n\\newpage\n")
+
+cat("# QC质控\n\n")
+cat("为了评价在上机过程中分析系统的稳定性，实验过程中会制备一个质控样品（Quality Control，QC）。QC样品由所有检测样品取等体积混合而成，在仪器分析的过程中，每15个分析样品插入一个QC样品，在数据分析时，可通过QC样本的重复性以考察整个分析过程中仪器稳定性，保证结果的可靠性。\n\n")
+cat("## QC的TIC\n\n")
+cat("样品经色谱分离流出的组分不断进入质谱，质谱连续扫描进行数据采集，每一次扫描得到一张质谱图，将每个时间点检测到的所有离子信号强度加和绘制成TIC图，可反映样品中所有离子的整体信息。\n\n")
+cat("下图分别展示了正、负离子模式下，质控样品的TIC图。将QC样本的TIC谱图进行叠加，可以看出各QC样本间色谱峰强度和保留时间基本一致，表明系统稳定性及实验的重复性非常好。\n\n")
+cat("下图展示正/负离子模式下 QC 样本的 TIC 图。\n\n")
+
+include_img(
+  png_path = file.path(report_path, "3.QC/1.TIC/TIC_single.png")
+)
+
+cat("\n\n")
+cat("\n\\newpage\n")
+
+cat("## QC的相关性\n\n")
+cat("对QC样本进行皮尔森（Pearson）相关性分析，一般QC样本相关性系数（R）大于0.7表明相关性较好，QC样本的相关性越高，表明整个检测过程稳定性越好，数据质量越高。实验结果表明QC样本间的相关性系数都在0.9以上，说明实验重复性较好。
+下图分别展示了正、负离子模式下，质控样品的相关性。\n\n")
+include_img(
+  png_path = file.path(report_path, "3.QC/2.correlation/correlation_single.png"),
+  pdf_path = file.path(report_path, "3.QC/2.correlation/correlation_single.pdf")
+)
+
+cat("\n\n")
+cat("\n\\newpage\n")
+
+cat("## QC的RSD\n\n")
+cat("相对标准偏差(RSD)是一种统计度量，表明数据集相对于其平均值的离散程度, 相对标准差的值越大，表明数据越分散。相对标准偏差越小，表明数据越接近其平均值。 QC样本相对丰度的相对标准偏差（RSD）越小，表明仪器的稳定性越好。本实验 QC 样本中 RSD≤30%的 Peak 数目占 QC 样本总 Peak 数目的比例在 80%以上，表明仪器分析系统稳定性较好。\n\n")
+include_img(
+  png_path = file.path(report_path, "3.QC/3.RSD/RSD_single.png")
+)
+
+cat("\n\n")
+cat("\n\\newpage\n")
+
+cat("## QC和所有样本的PCA\n\n")
+cat("将所有实验样本和QC样本提取得到的峰进行PCA分析。QC样本差异越小说明整个方法稳定性越好数据质量越高，体现在PCA分析图上就是QC样本的分布会聚集在一起。\n\n")
+cat("下图分别展示了正、负离子模式下，总体样本的PCA图。\n\n")
+include_img(
+  png_path = file.path(report_path, "3.QC/4.PCA/PCA_single.png")
+)
+cat("注：横轴 PC1，纵轴 PC2，颜色为分组，椭圆为 95% 置信区间。\n\n")
+
+cat("\n\n")
+cat("\n\\newpage\n")
+
+cat("## QC和所有样本的CV分布\n\n")
+cat("统计学中的CV（Coefficient of Variation）代表变异系数，也称为离散系数或变差系数，是衡量数据离散程度的归一化相对指标。QC样本变异系数越小，表明仪器的稳定性越好。图中横坐标代表CV值，纵坐标表示小于对应CV值的Feature数目占总Feature数目的比例，QC为质控样本，与X轴平行的两条参考线对应Feature数量占总Feature数量的75%和85%。\n\n")
+include_img(
+  png_path = file.path(report_path, "3.QC/5.CV/cv_single.png")
+)
+
+cat("\n\n")
+cat("\n\\newpage\n")
+
+# 若非单一对照-处理组，仍显示多元统计，但仅针对第一组
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+
+  cat("# 多元统计分析\n\n")
+  cat("采用多变量统计分析，可以在最大程度保留原始信息的基础上将高维复杂的数据进行“简化和降维”，建立可靠的数学模型对研究对象的代谢谱特点进行归纳和总结。首先采用无监督的主成分分析方法（Principal Component Analysis，PCA）来观察各样品之间的总体分布和组间的离散程度，然后用有监督的（正交）偏最小二乘法分析（(Orthogonal)Partial Least Squares Discrimination Analysis，(O)PLS-DA）来区分各组间代谢轮廓的总体差异，寻找组间的差异代谢物。OPLS-DA分析中，变量权重值（Variable important in projection, VIP）至少大于1的变量被认为是差异变量。为防止模型过拟合，100次置换检验的方法来考察模型的拟合效果。\n\n")
+cat("多元统计分析结果见4.多元统计分析文件夹。 \n\n")
+
+  cat("## PCA\n\n")
+  cat("主成分分析（Principal Component Analysis，PCA）是一种常用的无监督降维算法，广泛应用于代谢组学数据分析中。其核心思想是通过线性变换，将原始高维代谢物数据转换为一组互不相关的低维主成分（Principal Components，PCs），同时尽可能保留原始数据的方差。在数据分析中，一般先采用PCA方法，观察组间样本的总体分布趋势和组间样本的差异度。\n\n")
+  
+}
+
+```
+
+```{r, echo=FALSE}
+
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  
+  if (nrow(sum_pca) > 0) {
+    cat("PCA 模型的相关参数见PCA 模型参数表：\n\n")
+    ft <- print_table(sum_pca, caption = "比对组的 PCA 模型参数表")
+    ft
+  }
+  
+}
+
+```
+
+```{r, echo=FALSE, results='asis'}
+
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  
+  if (nrow(sum_pca) > 0) {
+    cat("- **title**: 该模型对应的数据对象 \n\n")
+    cat("- **type**: 模型类型 \n\n")
+    cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+    cat("- **A**: 模型的主成分个数 \n\n")
+    cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想，一般认为R2X大于0.5说明模型效果较好 \n\n")
+  }
+  
+  cat(paste0("### ", group.data[1], "\n\n"))
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/1.PCA", group.data[1], "single", sprintf("PCA_%s_single.png", group.data[1]))
+  )
+  
+  cat("注：横坐标表示第一主成分解释度，纵坐标表示第二主成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表 95%置信区间。\n\n")
+
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## PLS-DA\n\n")
+  cat("主成分分析法虽然能够有效地提取主要信息，但是对于相关性较小的变量不敏感，而偏最小二乘法判别分析（Partial Least Squares-Discriminant Analysis, PLS-DA）可以解决此问题。PLS-DA是一种有监督模式识别的多元统计分析方法，具体做法是在分析时对样品进行指定并分组，分组后模型会自动加上另外一个隐含的数据集Y，模拟分析数据矩阵(X)与Y值间的关系，去除不相关的噪音，这种模型计算的方法把各组分门别类可以使组间区分最大化，有利于寻找差异代谢物。正交偏最小二乘法判别分析（OPLS-DA）是PLS-DA的衍生算法，结合了正交信号矫正（OSC）和PLS-DA方法, 在建模时能够将X矩阵信息分解成与Y相关和不相关的两类信息，其中与Y相关的变量信息为预测主成分，与Y不相关的变量信息为正交主成分，通过去除不相关的差异来筛选差异变量，从而OPLS-DA可以更好地区分组间差异，提高模型的有效性和解析能力。在OPLS-DA得分图上，有两种主成分，即预测主成分和正交主成分。OPLS-DA将组间差异最大化的反映在t[1]上，所以从t[1]上能直接区分组间变异，而在正交主成分to[1]上则反映了组内的变异。\n\n")
+  
+}
+
+```
+
+```{r, echo=FALSE}
+
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  
+  if (nrow(sum_plsda) > 0) {
+    
+    ft <- print_table(sum_plsda, caption = "比对组的 PLS-DA 模型参数表")
+    ft
+
+  }
+
+}
+
+```
+
+```{r, echo=FALSE, results='asis'}
+
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  
+  cat("- **title**: 该模型对应的数据对象 \n\n")
+  cat("- **type**: 模型类型 \n\n")
+  cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+  cat("- **A**: 模型的主成分个数 \n\n")
+  cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想 \n\n")
+  cat("- **R2Y（cum）**: 模型的稳定性，该值越接近1越理想 \n\n")
+  cat("- **Q2（cum）**: 模型的预测率，该值越接近1越理想 \n\n")
+  
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat(paste0("### ", group.data[1], "\n\n"))
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/2.PLS-DA", group.data[1], "single", sprintf("PLS-DA_%s_single.png", group.data[1]))
+  )
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/2.PLS-DA", group.data[1], "single", sprintf("PLS-DA_%s_single_permutation_plot.png", group.data[1]))
+  )
+
+  cat("注：横坐标表示第一主成分解释度，纵坐标表示第二主成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表 95%置信区间。\n\n")
+  
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## OPLS-DA\n\n")
+  cat("主成分分析法虽然能够有效地提取主要信息，但是对于相关性较小的变量不敏感，而偏最小二乘法判别分析（Partial Least Squares-Discriminant Analysis, PLS-DA）可以解决此问题。PLS-DA是一种有监督模式识别的多元统计分析方法，具体做法是在分析时对样品进行指定并分组，分组后模型会自动加上另外一个隐含的数据集Y，模拟分析数据矩阵(X)与Y值间的关系，去除不相关的噪音，这种模型计算的方法把各组分门别类可以使组间区分最大化，有利于寻找差异代谢物。正交偏最小二乘法判别分析（OPLS-DA）是PLS-DA的衍生算法，结合了正交信号矫正（OSC）和PLS-DA方法, 在建模时能够将X矩阵信息分解成与Y相关和不相关的两类信息，其中与Y相关的变量信息为预测主成分，与Y不相关的变量信息为正交主成分，通过去除不相关的差异来筛选差异变量，从而OPLS-DA可以更好地区分组间差异，提高模型的有效性和解析能力。在OPLS-DA得分图上，有两种主成分，即预测主成分和正交主成分。OPLS-DA将组间差异最大化的反映在t[1]上，所以从t[1]上能直接区分组间变异，而在正交主成分to[1]上则反映了组内的变异。\n\n")
+
+}
+
+```
+
+```{r, echo=FALSE}
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  if (nrow(sum_oplsda) > 0) {
+    ft <- print_table(sum_oplsda, caption = "比对组的 OPLS-DA 模型参数表")
+    ft
+  }
+}
+
+```
+
+```{r, echo=FALSE, results='asis'}
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = TRUE)])) > 1) {
+  
+  cat("- **title**: 该模型对应的数据对象 \n\n")
+  cat("- **type**: 模型类型 \n\n")
+  cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+  cat("- **A**: 模型的主成分个数+正交成分个数 \n\n")
+  cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想 \n\n")
+  cat("- **R2Y（cum）**: 模型的稳定性，该值越接近1越理想 \n\n")
+  cat("- **Q2（cum）**: 模型的预测率，该值越接近1越理想 \n\n")
+
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  cat("置换检验（Permutation testing）是一种用来评价OPLS-DA模型准确性的随机排序方法，用来评判监督性学习方法获得分类不是偶然的。该方法固定X矩阵，将先前定义的分类Y矩阵的变量进行随机排列n次（一般100~1000次），每次排列组合后，构建新的OPLS-DA模型，计算相应的模型累积的R2Y和Q2值。将原始分类的Y矩阵、n次不同排列的Y矩阵与R2Y、Q2进行线性回归，得到的回归直线与y轴的截距值作为衡量模型是否过拟合的标准。通常Q2截距值小于0表明模型没有过拟合。\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/3.OPLS-DA", group.data[1], "single", sprintf("OPLS-DA_%s_single.png", group.data[1]))
+  )
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/3.OPLS-DA", group.data[1], "single", sprintf("OPLS-DA_%s_single_permutation_plot.png", group.data[1]))
+  )
+  include_img(
+    png_path = file.path(report_path, "4.多元统计分析/3.OPLS-DA", group.data[1], "single", sprintf("S-Plot_%s_single.png", group.data[1]))
+  )
+}
+
+cat("注：图中横坐标表示置换检验的置换保留度（与原模型Y变量顺序一致的比例，置换保留度等于1处的点即为原模型的R2Y和Q2值），纵坐标表示R2Y或Q2 的取值，绿色三角形表示置换检验得到的R2Y值，蓝色圆点表示置换检验得到的Q2值，两条虚线分别表示R2Y和Q2 的回归线。原模型R2Y非常接近1，说明建立的模型符合样本数据的真实情况；原模型Q2 非常接近1，说明如果有新样本加入模型，会得到近似的分布情况，总的来说原模型可以很好地解释两组样本之间的差异。置换检验随机模型的Q2值均小于原模型的Q2 值；Q2的回归线与纵轴的截距小于零；同时随着置换保留度逐渐降低，置换的Y变量比例增大，随机模型的Q2逐渐下降，且Q2截距值小于0，说明原模型具有良好的稳健性，不存在过拟合现象。\n\n")
+
+cat("注：横坐标表示第一主成分解释度，纵坐标表示正交成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表95%置信区间。\n\n")
+
+cat("\n\n")
+cat("\n\\newpage\n")
+  
+# 差异筛选（保持原有逻辑，仅展示第一组）
+if (nrow(final_summary) > 0 &&
+    sum(final_summary$diff_feature) > 0 &&
+    sum(final_summary$diff_feature_name) > 0) {
+  
+  cat("# 差异筛选\n\n")
+  cat("在本研究中，我们采用了多维统计分析和单维统计分析相结合的方式来筛选差异变量。单维统计分析方法包括假设检验（Hypothesis testing）和差异倍数（Fold Change, FC）分析，多维统计分析包括主成分分析（PCA），正交偏最小二乘法判别分析（OPLS-DA）等。单维统计分析可以避免数据预处理对原始数据的干扰，而监督性的多维统计方法如OPLS-DA可去除无关的信息，获得与某种因素直接相关的差异性变量。OPLS-DA模型得到的变量权重值（Variable Importance for the Projection, VIP）能够用于衡量各代谢物的表达模式对各组样本分类判别的影响强度和解释能力，挖掘具有生物学意义的差异代谢物分子。通常 VIP > 1的代谢物被认为在模型解释中具有显著贡献。两种统计分析方法的结合能提供更加可靠的实验结果。\n\n")
+  
+  cat("## 分组差异结果表\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+  cat(paste0("* > 单离子表格：`./5.差异代谢物分析/1.分组对比/", group.data[1], "/0.差异筛选表格/", group.data[1], "_组间对比_single.xlsx`\n\n"))
+
+}
+```
+
+```{r, echo=FALSE}
+if (nrow(final_summary) > 0 &&
+    sum(final_summary$diff_feature) > 0 &&
+    sum(final_summary$diff_feature_name) > 0) {
+    # 可选：若存在 volcano_name.xlsx，显示 Top 100
+    vn <- file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "3.volcano", "volcano_name.xlsx")
+    if (file.exists(vn)) {
+      data_diff <- readxl::read_xlsx(vn) |> dplyr::arrange(desc(VIP))
+      ft <- print_table(head(data_diff[, c("peak_name","name","pvalue","adj_p_value","FC","Log2FC","VIP","difference")], 100),
+                  caption = "Top 100 差异条目（按 VIP）")
+      ft
+    }
+}
+```
+
+```{r, echo=FALSE, results='asis'}
+if (nrow(final_summary) > 0 &&
+    sum(final_summary$diff_feature) > 0 &&
+    sum(final_summary$diff_feature_name) > 0) {
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 聚类热图\n\n")
+  cat("表达趋势相同的代谢物在生物学上往往具有结果和功能相似性/互补性，或者受同一代谢通路的正调控/负调控，因此。对差异代谢物进行层次聚类分析，有助于我们将具有相同特征的代谢物归为一类，并发现代谢物在实验组间的变化特征。
+对每一组对比，我们对差异代谢物进行聚类，并以热力图进行展示。\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+  include_img(
+    pdf_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "1.HCA", "heatmap.pdf")
+  )
+  include_img(
+    pdf_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "1.HCA", "heatmap_name.pdf")
+  )
+  cat("注：图中每列表示一个样品，每行表示一个代谢物，图中的颜色表示代谢物在该组样品中相对表达量的大小，红色代表该代谢物在该样品中表达量较高，蓝色代表表达量较低，具体表达量大小变化趋势请见右上方颜色条下的数字标注。左侧为代谢物聚类的树状图，右侧为代谢物的名称，两个代谢物分支离得越近，说明它们的表达量越接近；上方为样品聚类的树状图，下方为样品的名称，两个样品分支离的越近，说明这两个样品所有代谢物的表达模式越接近，即代谢物表达量变化趋势越接近。\n\n")
+   
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 相关性分析\n\n")
+  cat("相关性分析是指对两个或多个具备相关性的变量元素进行分析，从而衡量两个变量因素的相关密切程度，两个变量之间的相关程度通过相关系数r来表示。相关系数r的值在-1和1之间，但可以是此范围内的任何值。正相关时，r值在0和1之间；负相关时，r值在-1和0之间。r的绝对值越接近1，两变量的关联程度越强，r的绝对值越接近0，两变量的关联程度越弱。\n\n")
+  
+  cat("相关性分析可以帮助衡量显著性差异代谢物之间的代谢密切程度，有利于进一步了解生物状态变化过程中代谢物之间的相互调节关系。具有表达相关性的代谢物，可能共同参与某一生物过程，即功能相关性；此外，不同代谢物之间具有协同或互斥关系，比如某类代谢物变化趋势相同，则为正相关；与某类代谢物变化趋势相反，则为负相关。正相关的代谢物也可能表明其来源于同一合成途径，负相关表明可能被分解用于其他代谢物的合成，即合成转化关系。\n\n")
+  
+  cat("对每一组对比，我们对差异代谢物的定量值进行相关系数计算，计算方法采用pearson方法，并以热力图形式进行展示。 \n\n")
+  
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      pdf_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "2.correlation", "correlation_top20_features.pdf")
+    )
+    include_img(
+      pdf_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "2.correlation", "correlation_top20_features_name.pdf")
+    )
+    
+  cat("注：每一行和每一列都分别表示一个代谢物，不同位置的色块表示对应位置代谢物的相关性系数大小。红色表示正相关，蓝色表示负相关，颜色越深表示相关性越强。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 火山图\n\n")
+  cat("火山图（Volcano Plot）主要用于展示代谢物在两组样品中的相对含量差异以及在统计学上差异的显著性，根据显著性变化的阈值为分界线，展示差异筛选后的代谢物上调下调情况。火山图中每个点代表一个代谢物，横坐标代表该组对比各物质的倍数变化（取以2为底的对数），纵坐标表VIP值。显著上调的代谢物以红色表示，显著下调的代谢物以蓝色表示，非显著差异的代谢物为灰色。\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "3.volcano", "volcano.png")
+    )
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "3.volcano", "volcano_name.png")
+    )
+  cat("注：火山图中每个点代表一个代谢物，横坐标代表该组对比各物质的倍数变化（取以2为底的对数），纵坐标表示t检验的P-value（取以10为底对数的负数），散点大小代表OPLS-DA模型的VIP值，散点的颜色表示上调和下调， 红色表示上调， 蓝色表示下调。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## VIP\n\n")
+  cat("在OPLS-DA分析中， 变量权重值（Variable Importance for the Projection, VIP）能够用于衡量各代谢物的表达模式对各组样本分类判别的影响强度和解释能力，挖掘具有生物学意义的差异代谢物分子。\n\n")
+  
+  cat("对每一组对比，我们对差异代谢物VIP值以气泡图进行展示。\n\n")
+  
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "4.VIP_analysis", "VIP_distribution.png")
+    )
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "4.VIP_analysis", "VIP_bubble.png")
+    )
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "4.VIP_analysis", "VIP_bubble_name.png")
+    )
+
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 差异代谢物的 Fold Change Rank 图\n\n")
+  cat("代谢物差异倍数（Fold Change, FC）能够最直观反应对比组的代谢差异情况。为了展示FC的动态变化，将检测到的代谢物按FC值大小进行从小到大排序，绘制代谢物含量差异分布图，对筛选后上调和下调的前10个代谢物进行标注。横坐标表示每个代谢物按FC从小到大的排序值，纵坐标代表每个代谢物的log2FC，红色代表上调差异代谢物，蓝色代表下调差异代谢物，平行于X轴的两条辅助线代表FC筛选标准。\n\n")
+  
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "7.差异代谢物的Rank图", "feature_with_rank.png")
+    )
+  cat("注：图中左侧横坐标是OPLS-DA 分析VIP值， 纵坐标是代谢物。图中点的大小代表VIP值的大小。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## KEGG 富集\n\n")
+  cat("KEGG（Kyoto Encyclopedia of Genes and Genomes）数据库有助于研究者把基因、表达信息以及代谢物含量作为一个整体网络来进行研究。作为有关Pathway的主要公共数据库，提供对代谢组学研究中检测到的代谢物进行功能注释和通路富集的生物信息学分析方法。其核心流程为首先通过数据预处理（如筛选差异代谢物）获得目标代谢物列表，然后将这些代谢物映射到 KEGG 数据库中预设的代谢通路、信号转导通路等功能通路中，利用超几何检验等统计方法计算各通路中代谢物的富集程度，并通过校正多重检验筛选出具有显著富集意义的通路，最终通过富集结果揭示代谢物在生物体内参与的主要生物学过程、调控网络及潜在功能，帮助研究者从通路水平理解代谢变化的生物学意义。\n\n")
+  
+  cat("本项目将注释到的KEGG ID提交到KEGG数据库，进一步注释代谢物所参与的代谢通路。\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+    # 表格（如有）
+}
+```
+
+<!-- # ```{r, echo=FALSE} -->
+<!-- # if (nrow(final_summary) > 0 && -->
+<!-- #     any(final_summary$ion_type=="POS&NEG") && -->
+<!-- #     sum(final_summary$diff_feature[final_summary$ion_type=="POS&NEG"]) > 0 && -->
+<!-- #     sum(final_summary$diff_feature_name[final_summary$ion_type=="POS&NEG"]) > 0) { -->
+<!-- #     kegg_xlsx <- file.path(report_path, "6.KEGG富集", group.data[1], "KEGG_enrichment.xlsx") -->
+<!-- #     if (file.exists(kegg_xlsx)) { -->
+<!-- #       kegg_enrich_data <- readxl::read_xlsx(kegg_xlsx) -->
+<!-- #       ft <- print_table(kegg_enrich_data, caption = "KEGG 富集结果表") -->
+<!-- #       ft -->
+<!-- #     } -->
+<!-- # } -->
+<!-- # ``` -->
+
+```{r, echo=FALSE, results='asis'}
+if (nrow(final_summary) > 0 &&
+    sum(final_summary$diff_feature) > 0 &&
+    sum(final_summary$diff_feature_name) > 0) {
+    cat("根据差异代谢物结果，进行KEGG通路富集。富集通常是分析一组代谢物在某个通路上检测到的显著性进行打分，分析的结论是基于一组相关的代谢物，因此，富集分析增加了研究的可靠性以及能够识别出与生物现象最相关的通路，导致样本性状差异的最重要的功能差别。P值表示差异代谢物在该通路中是否出现了富集。当P值小于某一个阈值时（一般设为0.05），我们认为该通路是可信的。\n\n")
+    # 点图
+    include_img(
+      png_path = file.path(report_path, "6.KEGG富集", group.data[1], "KEGG_dotplot.png")
+    )
+  cat("注：KEGG富集分析图，纵坐标为通路名称，横坐标为倍数富集,气泡的大小表示该通路上富集到的差异代谢物的数目， 气泡的颜色表示通路富集分析的p值。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## MSEA\n\n")
+  cat("KEGG富集分析是基于筛选后的差异代谢物的超几何分布富集，容易遗漏部分差异表达不显著，但又具有重要生物学意义的代谢物。为了能从整体代谢通路上反应所有代谢物的变化趋势，MSEA（Metabolite Set Enrichment Analysis）代谢集富集分析不需要指定明确的差异代谢物，重点挖掘代谢物丰度变化较低但仍对生物体调控具备主要意义的代谢物及其所在的代谢途径，此分析采用所有检测物质进行分析。\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+    msea_xlsx <- file.path(report_path, "7.MSEA", group.data[1], "MSEA_result.xlsx")
+    if (file.exists(msea_xlsx)) {
+      msea_data <- readxl::read_xlsx(msea_xlsx)
+      ft <- print_table(msea_data, caption = "MSEA 富集结果表")
+      ft
+    }
+    include_img(
+      png_path = file.path(report_path, "7.MSEA", group.data[1], "MSEA_dpi300.png")
+    )
+    include_img(
+      pdf_path = file.path(report_path, "7.MSEA", group.data[1], "Top10Pathways_ES.pdf")
+    )
+  cat("注：纵坐标表示代谢集的名称，对应标注代谢集的 p-value 值；横坐标表示富集程度，颜色表示富集分析的 p 值，颜色越深 p 值越小，富集程度越显著。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 差异代谢物表达量\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      pdf_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "5.差异代谢物表达量", "Global_Metabolite_Comparison.pdf")
+    )
+  cat("注：图中横纵表为样本名组别名称，纵坐标为样本中代谢物定量值取log2。\n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  cat("## 差异网络分析\n\n")
+  cat("通过组内差异筛选得到的代谢物，表达量的不同是最直观的差异维度。下面用箱线图展示了不同代谢物在两组里面的表达量对比，箱线图中间横线为代谢物在同组内表达量的中位数，中间的箱型表示四分位数的范围：\n\n")
+  cat(paste0("### ", group.data[1], "\n\n"))
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "6.差异网络分析", "Network_CytoscapeStyle.png")
+    )
+    include_img(
+      png_path = file.path(report_path, "5.差异代谢物分析/1.分组对比", group.data[1], "6.差异网络分析", "Network_CytoscapeStyle_name.png")
+    )
+  cat("注：图中点代表差异代谢物，点的大小代表差异倍数绝对值的大小，点越大表示差异倍数越大。点的颜色代谢差异代谢物的上下调，蓝色为上调，红色下调，图中线条的颜色代表相关性，红色线条代表负相关，蓝色线条代表正相关。线条的粗细代表相关性系数绝对值的大小，线条越粗，相关性越大。 \n\n")
+  cat("\n\n")
+  cat("\n\\newpage\n")
+  
+  if (length(group.data)>1) {
+    
+    # 组间差异（Venn / Upset）—— 只展示统一汇总图，不再按多组展开
+  cat("## 组间差异汇总\n\n")
+  include_img(
+    png_path = file.path(report_path, "5.差异代谢物分析/2.组间对比/1.venn", "Venn_diagram.png")
+  )
+  include_img(
+    png_path = file.path(report_path, "5.差异代谢物分析/2.组间对比/1.venn", "Venn_diagram_name.png")
+  )
+  cat("注：Venn 图：图中不同的圈，表示不同的对比组。\n\n")
+  include_img(
+    png_path = file.path(report_path, "5.差异代谢物分析/2.组间对比/2.upset", "UpSet_plot.png")
+  )
+  include_img(
+    png_path = file.path(report_path, "5.差异代谢物分析/2.组间对比/2.upset", "UpSet_plot_name.png")
+  )
+  cat("注：图的左侧柱状图展示各比较组中分别包含差异代谢物的个数；下方交集点的部分，用点指代左侧的对应比较组名称，通过纵向实现点与点之间的连接，表示对应数据集之间存在交集的情况；通过纵向的对应关系，对应上方柱状图，表示以上多个比较组中，连线的比较组与其他比较组相比，独有的代谢物个数。\n\n")
+  
+  }
+  
+}
+
+```

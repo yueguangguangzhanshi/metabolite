@@ -1,0 +1,325 @@
+---
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+    number_sections: yes
+    fig_caption: yes
+    always_allow_html: yes
+classoption: "hyperref,"
+css: './css.css'
+title: "Glycopeptide Qualitative analysis"
+always_allow_html: yes
+---
+
+-----------------------------------------------
+
+<span style="">**Project name：`r para[["info"]][["project_name"]]`**</span>
+
+<span style="color: #888888;">*Project ID：`r para[["info"]][["project_id"]]`*</span>
+
+<span style="color: #888888;">*User：`r para[["info"]][["user"]]`*</span>
+
+-----------------------------------------------
+
+```{r include = FALSE}
+
+	datatable(
+	
+		data.frame('a' = 1:4, 'b' = 1:4)
+	
+	)
+
+```
+
+```{r include = FALSE}
+
+	htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+
+  htmltools::tagList(highchart() %>%hc_add_series(data = abs(rnorm(5)), type = "column"))
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("ident_stat_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Statistics \n\n")
+  
+  g <- result[["Statistics_p"]] %>% ggplotly
+
+	print(htmltools::tagList(g))
+
+	cat(" \n\n")
+	
+	g <- result[["Statistics_p2"]] %>% ggplotly
+
+	print(htmltools::tagList(g))
+
+	cat(" \n\n")
+	
+	div(
+		
+		DT::datatable(
+	
+		result[["Statistics"]], 
+		
+		extensions = 'Buttons',
+		
+		colnames=c("No."=1),
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+		
+			scroller = TRUE, scrollX = T, scrollY = T
+		
+		)
+	
+	)) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("ident_motif_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Motif analysis \n\n")
+  
+  cat("## Sequence logo \n\n")
+  
+  if (file.exists(paste0(data_path,"/Motif/Seq_logo_NXS&T.png"))) {
+    
+    cat(paste0("![](",data_path,"/Motif/Seq_logo_NXS&T.png)"))
+    
+  }
+    
+  if (file.exists(paste0(data_path,"/Motif/Seq_logo_NXC.png"))) {
+    
+    cat(paste0("![](",data_path,"/Motif/Seq_logo_NXC.png)"))
+    
+  }
+  
+  cat(" \n\n")
+  
+  cat("## Motif result \n\n")
+  
+  div(style = 'margin-bottom: 30px;',
+		
+			DT::datatable(
+			
+				result[["motif"]], 
+				
+				extensions = 'Buttons',
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = T
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis', warning = FALSE, message = FALSE}
+
+if ("ident_gta_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Glycan type analysis \n\n")
+  
+  div(style = 'margin-bottom: 30px;',
+		
+			DT::datatable(
+			
+				result[["glycan Type analysis"]], 
+				
+				colnames=c("No."=1),
+				
+				extensions = 'Buttons',
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis', warning = FALSE, message = FALSE}
+
+if ("ident_tg_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Top 20 glycans \n\n")
+  
+  print(htmltools::tagList(result[["Top_glycans_p"]]))
+  
+  cat(" \n\n")
+  
+  div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+			
+				result[["top_glycans"]],
+				
+				colnames=c("No."=1),
+				
+				extensions = 'Buttons',
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("ident_gpgs_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Glycans per glycosite \n\n")
+  
+  cat(paste0("![](",data_path,"/Glycans_per_glycosite/glycans_per_glycoSite_pie.png)"))
+
+	cat(" \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+			
+				result[["glycans per glycoSite"]], 
+				
+				extensions = 'Buttons',
+				
+				colnames=c("No."=1),
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+	
+if ("ident_gpgp_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Glycosites per glycoprotein \n\n")
+  
+  cat(paste0("![](",data_path,"/Glycosites_per_glycoprotein/glycosites_per_glycoProtein_pie.png)"))
+
+	cat(" \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+			
+				result[["glycosites per glycoProtein"]], 
+				
+				extensions = 'Buttons',
+				
+				colnames=c("No."=1),
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n") 
+  
+}
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+	
+if ("ident_uniprot_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Compare with Uniport \n\n")
+  
+  g <- result[["Compare_with_Uniport_p"]] %>% ggplotly(width=500)
+
+	print(htmltools::tagList(g))
+
+	cat(" \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+			
+				result[["Compare with Uniport"]], 
+				
+				extensions = 'Buttons',
+				
+				colnames=c("No."=1),
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+
+```

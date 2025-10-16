@@ -1,0 +1,268 @@
+---
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+    number_sections: yes
+    fig_caption: yes
+classoption: "hyperref,"
+css: './css.css'
+title: "Functional analysis"
+---
+
+-----------------------------------------------
+
+<span style="">**Project name：`r para[["info"]][["project_name"]]`**</span>
+
+<span style="color: #888888;">*Project ID：`r para[["info"]][["project_id"]]`*</span>
+
+<span style="color: #888888;">*User：`r para[["info"]][["user"]]`*</span>
+
+-----------------------------------------------
+
+```{r include = FALSE}
+
+	datatable(
+	
+		data.frame('a' = 1:4, 'b' = 1:4)
+	
+	)
+
+```
+
+```{r include = FALSE}
+
+	htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+
+```
+
+# Brief summary of results
+
+```{r echo = FALSE, results = 'asis', warning = FALSE}
+
+	annot <- result[["annot"]][["FUNC"]][["annot_table"]] 
+
+	annot <- annot[, which(names(annot) %in% c("Accession","UniProtEntry.Newest","Protein.Name","Status","Organism","Length","Mass") == FALSE)]
+
+	DT::datatable(annot, extensions = 'Buttons',
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+			
+			scroller = TRUE, scrollX = T, scrollY = '400px'
+			
+		)
+		
+	)
+	
+	cat(" \n\n")
+
+```
+
+# Functional analysis results
+
+Annotations of `r para[["data"]][["protein_list"]][["FUNC"]] %>% length` proteins (species: `r para[["info"]][["db_sci_name"]]`):
+
+```{r echo = FALSE, results = 'asis', warning = FALSE, message = FALSE}
+
+	if("fun_kegg_check" %in% para[["info"]][["process_item"]]){
+	
+		if(nrow(result[["KEGG"]][["FUNC"]][["enrich_table"]]) > 0){
+		
+			cat("## KEGG enrichment analysis \n\n")
+		
+			cat("**KEGG pathway enrichment** \n\n")
+			
+			cat("KEGG, the full name of Kyoto Encyclopedia of genes and genomes, is used for bioinformatics research, including data mining of genome, proteome, metabolome and other omics. KEGG database can be classified into system, gene, chemical substance and health information, and is distributed in KEGG path, KEGG module, KEGG genes, KEGG Brite and other modules. KEGG pathway database (wiring diagram database) is the core of KEGG resources and contains high-level functional information, including diagrams of cell processes, such as metabolism, membrane transport, signal transduction and cell cycle.\n\n")
+
+			cat("### Enrichment results \n\n")
+
+			div(style = 'max-height: 600px;  overflow-y: scroll;',
+				
+				result[["KEGG"]][["FUNC"]][["enrich_table"]] %>% DT::datatable(extensions = 'Buttons',
+				
+					options = list(
+					
+							dom = 'lBfrtip',
+							
+							buttons = list(extend = 'collection',
+							
+								buttons = c('csv', 'excel'),
+								
+								text = 'Download'
+							),
+							
+							lengthMenu = list(c(10,25,50,-1), c(10,25,50,"All")),
+							
+								scroller = TRUE, scrollX = T, scrollY = '400px',
+												
+								rowCallback = JS("function(r,d) {$(r).attr('height', '30px;')}")
+					
+					),
+					
+					escape = FALSE
+				
+				)
+			
+			) %>% htmltools::tagList() %>% print()
+			
+			cat(" \n\n")
+			
+			cat("### KEGG enrichment histogram \n\n")
+			
+			cat('KEGG enrichment results can be visualized by histogram. The top 20 pathways with the smallest p-value are plotted. The ordinate represents the percentage of proteins in this pathway in the total number of differential proteins. The darker the color, the smaller the p-value. "* * *", "**" and "*" respectively represent the corrected p-value<0.001, Corrected p-value<0.01 and corrected p-value<0.05 (Note: if there are less than 3 pathways with P < 0.05, the pathways with P < 0.1 will be taken for mapping). \n\n')
+			
+			g <- result[["KEGG"]][["FUNC"]][["bar_plot"]] %>% ggplotly
+			
+			g[["x"]][["layout"]][["margin"]][["b"]] <- 300
+
+			g[["height"]] <- 550
+
+			print(htmltools::tagList(g))
+				
+			cat(" \n\n")
+			
+			cat("### KEGG enrichment Bubble Diagram \n\n")
+			
+			cat("Similarly, KEGG enrichment results can also be visualized by bubble chart, and the top 20 pathways with the smallest p-value are plotted. The abscissa represents the percentage of proteins in this pathway in the total number of differential proteins, and the color represents the smaller the p-value. \n\n")
+			
+			g <- result[["KEGG"]][["FUNC"]][["bubble_plot"]] %>% ggplotly
+			
+			g[["x"]][["layout"]][["margin"]][["b"]] <- 300
+
+			g[["height"]] <- 550
+
+			print(htmltools::tagList(g))
+			
+			cat(" \n\n")
+		
+		}
+
+	}
+
+```
+
+```{r echo = FALSE, results = 'asis', warning = FALSE, message = FALSE}
+
+	if("fun_go_check" %in% para[["info"]][["process_item"]]){
+	
+		if(nrow(result[["GO"]][["FUNC"]][["enrich_table"]]) > 0){
+		
+			cat("## Go enrichment analysis \n\n")
+			
+			cat("### Enrichment results \n\n")
+
+			div(style = 'max-height: 600px;  overflow-y: scroll;',
+					
+				DT::datatable(result[["GO"]][["FUNC"]][["enrich_table"]],
+				
+				extensions = 'Buttons',
+				
+					options = list(
+					
+							dom = 'lBfrtip',
+							
+							buttons = list(extend = 'collection',
+							
+								buttons = c('csv', 'excel'),
+								
+								text = 'Download'
+								
+							),
+							
+							scroller = TRUE, scrollX = T, scrollY = '400px'
+					
+					),
+					
+					escape = FALSE
+				
+				)
+			
+			) %>% htmltools::tagList() %>% print()
+			
+			cat(" \n\n")
+			
+			cat("Go classification results and enrichment results can be visualized by column chart. In the bar graph of go classification, the top 20 pathways with the smallest P in the go classification results are used for mapping. The ordinates respectively represent the number of proteins in each classification and their percentage in the total differential proteins. The colors represent different primary classifications, biological process (pink) and molecular function (blue); Cellular component (green) \n\n")
+			
+			cat(paste0('![](', path_prefix, '/data/usrdata/', para[["info"]][["project_id"]], '/data/GO_enrichment/FUNC_GO_Classification_Bar_Plot.png)'))
+			
+			cat(" \n\n")
+			 
+			cat("Similarly, go enrichment results can also be visualized by bubble charts. The top 20 GO terms with the smallest p-value are plotted. The abscissa represents the percentage of proteins in the term in the total differential proteins, and the color represents the smaller the p-value. \n\n")
+			
+			cat("### Go enrichment Bubble Diagram {.tabset .tabset-fade .tabset-pills} \n\n")
+			
+			temp <- lapply(c("Biological Process", "Molecular Function", "Cellular Component"), function(type_name) {
+	  
+	      type_name_save <- type_name %>% toupper() %>% str_replace_all(' ', '_')
+				
+				cat(paste0("#### ", type_name, " \n\n"))
+				
+				g <- result[["GO"]][["FUNC"]][[paste0("bubble_plot_", type_name_save)]] %>% ggplotly
+				
+				g[["x"]][["layout"]][["margin"]][["b"]] <- 300
+
+				g[["height"]] <- 550
+
+				print(htmltools::tagList(g))
+				
+				cat(" \n\n")
+	
+	    }) %>% unlist %>% unname
+			
+			cat(" \n\n")
+			
+			cat('In the go enrichment column chart, the top 20 classifications with the smallest P under the three first-class classifications are plotted respectively. The ordinate represents the percentage of the protein under this classification in the total number of differential proteins. The darker the color is, the smaller the P-value is. "* * *", "**" and "*" represent FDR ≤ 0.001, FDR ≤ 0.01 and FDR ≤ 0.05 respectively \n\n')
+			
+			cat("### Go enrichment histogram {.tabset .tabset-fade .tabset-pills} \n\n")
+			
+			temp <- lapply(c("Biological Process", "Molecular Function", "Cellular Component"), function(type_name) {
+	  
+	      type_name_save <- type_name %>% toupper() %>% str_replace_all(' ', '_')
+				
+				cat(paste0("#### ", type_name, " \n\n"))
+				
+				g <- result[["GO"]][["FUNC"]][[paste0("bar_plot_", type_name_save)]] %>% ggplotly
+				
+				g[["x"]][["layout"]][["margin"]][["b"]] <- 300
+
+				g[["height"]] <- 550
+
+				print(htmltools::tagList(g))
+				
+				cat(" \n\n")
+	
+	    }) %>% unlist %>% unname
+			
+			cat(" \n\n")
+		
+		}
+		
+	}
+	
+```
+
+```{r echo = FALSE, results = 'asis', warning = FALSE, message = FALSE}
+
+	if("fun_string_check" %in% para[["info"]][["process_item"]]){
+	
+		if(paste0(path_prefix, '/data/usrdata/', para[["info"]][["project_id"]], '/data/STRING/FUNC_STRING_PPI.png') %>% file.exists){
+		
+			cat("### Protein protein interaction analysis \n\n")
+		
+			cat("[STRING](https://string-db.org/)The database contains information on known and predicted protein interactions. These include direct interaction (physical binding) and indirect interaction (functionally related); The sources of these information include: generic context; High-throughput Experiments； (Conserved) Coexpression； Previous Knowledge。 String integrates the function information of various organisms from these sources and can be queried when viewing relevant results. The whole network diagram between proteins is displayed through the protein network diagram, and each node represents a protein. Submit the names of different proteins in each group to the official website of string. After analysis, the protein interaction network diagram shown in the figure below can be obtained. \n\n")
+
+			cat(paste0('![](', path_prefix, '/data/usrdata/', para[["info"]][["project_id"]], '/data/STRING/FUNC_STRING_PPI.png) \n\n'))
+			
+			cat(" \n\n")
+		
+		}
+
+		
+	}
+
+```
+

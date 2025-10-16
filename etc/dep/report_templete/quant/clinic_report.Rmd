@@ -1,0 +1,121 @@
+---
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+    number_sections: yes
+    fig_caption: yes
+classoption: "hyperref,"
+css: './css.css'
+title: "Clinical analysis"
+---
+
+-----------------------------------------------
+
+<span style="">**Project name：`r para[["info"]][["project_name"]]`**</span>
+
+<span style="color: #888888;">*Project ID：`r para[["info"]][["project_id"]]`*</span>
+
+<span style="color: #888888;">*User：`r para[["info"]][["user"]]`*</span>
+
+-----------------------------------------------
+
+```{r include = FALSE}
+
+	datatable(
+	
+		data.frame('a' = 1:4, 'b' = 1:4)
+	
+	)
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("clinic_roc_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# ROC Analysis \n\n")
+  
+  cat("## ROC Plot(only display top 5 auc curve) {.tabset .tabset-fade .tabset-pills} \n\n")
+
+  temp <- lapply(paste0(.A,"_vs_",.B), function(i) {
+	
+		cat(paste0("### ", i, " \n\n"))
+	  
+	  cat(paste0("![](",data_path,"/roc/",i,"_top5_roc.png)"))
+		
+		cat(" \n\n")
+	
+	}) %>% unlist %>% unname
+	
+	cat(" \n\n")
+	
+	cat("## ROC Result \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+	
+		result[["roc"]], 
+		
+		extensions = 'Buttons',
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+		
+			scroller = TRUE, scrollX = T, scrollY = '400px'
+		
+		)
+	
+	)) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+	
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("clinic_survival_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Survival Analysis \n\n")
+  
+  cat("## Survival Plot {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  if (file.exists(paste0(data_path,"/survival_analysis/Kaplan_Meier_survival.png"))) {
+    
+    cat(paste0("![](",data_path,"/survival_analysis/Kaplan_Meier_survival.png)"))
+	
+	cat(" \n\n")
+	
+	cat("## Survival Result \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+	
+		result[["survival"]], 
+		
+		extensions = 'Buttons',
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+		
+			scroller = TRUE, scrollX = T, scrollY = '400px'
+		
+		)
+	
+	)) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+    
+  }
+  
+}
+	
+```

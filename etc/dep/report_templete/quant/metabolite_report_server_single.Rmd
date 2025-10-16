@@ -1,0 +1,544 @@
+---
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 4  # 支持四级标题
+    theme: united
+    highlight: tango
+    number_sections: yes
+    fig_caption: yes
+classoption: "hyperref,"
+css: './css.css'
+title: "Metabonomics Analysis"
+---
+
+------------------------------------------------------------------------
+
+[**Project name：`r input$project_name`**]{style=""}
+
+[*Project ID：`r para$info$project_id`*]{style="color: #888888;"}
+
+[*User：`r input$organ_info`*]{style="color: #888888;"}
+
+------------------------------------------------------------------------
+
+```{r include = FALSE}
+
+	datatable(
+	
+		data.frame('a' = 1:4, 'b' = 1:4)
+	
+	)
+
+```
+
+```{r include = FALSE}
+
+	htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+  
+cat("# 数据总览 \n\n")
+cat("## 参数信息 \n\n")
+div(style = 'margin-bottom: 20px;', DT::datatable(para_data%>%rownames_to_column(), rownames = F, colnames = c("参数名称", "参数值"), options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+
+cat("## 鉴定信息 \n\n")
+div(style = 'margin-bottom: 20px;', DT::datatable(final_summary[,2:6]%>%dplyr::distinct(), rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+cat("- **ion_type**: 离子的类型\n")
+cat("- **raw_feature_num**: 原始特征数量\n")
+cat("- **remove_missing_num**: 移除缺失值后的数量\n")
+cat("- **preprocess_feature_num**: 预处理后的特征数量\n\n")
+cat("- **preprocess_feature_num_name**: 预处理后的有名称的特征数量\n\n")
+
+cat("## 差异信息 \n\n")
+div(style = 'margin-bottom: 20px;', DT::datatable(final_summary[,-c(3:6)], rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+cat("- **compare**: 分组信息\n")
+cat("- **ion_type**: 离子的类型\n")
+cat("- **diff_feature**: 差异特征数量\n")
+cat("- **diff_feature_up**: 差异特征上调数量\n")
+cat("- **diff_feature_down**: 差异特征下调数量\n\n")
+cat("- **diff_feature_name**: 差异代谢物的数量\n\n")
+cat("- **diff_feature_name_up**: 差异代谢物上调数量\n\n")
+cat("- **diff_feature_name_down**: 差异代谢物下调数量\n\n")
+
+cat("# 数据预处理 \n\n")
+cat(paste0("在进行统计分析之前，需要对原始数据进行一系列的预处理。数据预处理包括缺失值的剔除、填充、归一化等，详细步骤如下：1.缺失值的过滤：保留所有样本中非零值", input[['miss.value.handle.cutoff']], "%以上的特征峰（feature）；2. 缺失值填充：原始矩阵中", names(para_sum$fill)[which(para_sum$fill==input$miss.value.fill)], "填补缺失值；3. QC RSD过滤：删除QC样本相对标准偏差（RSD）> ", input$rsd.cutoff*100, "%的特征峰（feature），4.归一化：样本采用", names(para_sum$normalize)[which(para_sum$normalize==input$normalized.handle.method)], "进行归一化，经过一系列的数据预处理后，得到最终用于后续分析的数据矩阵，数据预处理详细过程见：\n\n"))
+cat(paste0('* [>打开缺失值过滤数据表](',url_path,'/2.数据预处理/1.缺失值过滤/组内缺失值过滤数据_single.xlsx)\n\n'))
+cat(paste0('* [>打开缺失值填充数据表](',url_path,'/2.数据预处理/2.缺失值填充/缺失值填充数据_single.xlsx)\n\n'))
+cat(paste0('* [>打开RSD过滤数据表](',url_path,'/2.数据预处理/3.RSD过滤/RSD过滤数据_single.xlsx)\n\n'))
+cat(paste0('* [>打开归一化数据表](',url_path,'/2.数据预处理/4.归一化/归一化处理数据_single.xlsx)\n\n'))
+cat(" \n\n")
+
+cat("# QC质控 \n\n")
+cat("为了评价在上机过程中分析系统的稳定性，实验过程中会制备一个质控样品（Quality Control，QC）。QC样品由所有检测样品取等体积混合而成，在仪器分析的过程中，每15个分析样品插入一个QC样品，在数据分析时，可通过QC样本的重复性以考察整个分析过程中仪器稳定性，保证结果的可靠性。\n\n")
+cat("## QC的TIC \n\n")
+cat("样品经色谱分离流出的组分不断进入质谱，质谱连续扫描进行数据采集，每一次扫描得到一张质谱图，将每个时间点检测到的所有离子信号强度加和绘制成TIC图，可反映样品中所有离子的整体信息。\n\n")
+cat("下图分别展示了正、负离子模式下，质控样品的TIC图。将QC样本的TIC谱图进行叠加，可以看出各QC样本间色谱峰强度和保留时间基本一致，表明系统稳定性及实验的重复性非常好。\n\n")
+if (file.exists(paste0(report_path, "/3.QC/1.TIC/TIC_single.png"))) {
+  cat(sprintf('![](%s/3.QC/1.TIC/TIC_single.png)', report_path))
+  cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">总离子流图</div>')
+}
+cat('\n\n')
+
+cat("## QC的相关性 \n\n")
+cat("对 QC 样本进行皮尔森（Pearson）相关性分析，一般QC样本相关性系数（R2）大于 0.9 表明相关性较好，QC样本的相关性越高，表明整个检测过程稳定性越好，数据质量越高 。实验结果表明 QC 样本间的相关性系数都在 0.9 以上，说明实验重复性较好。\n\n")
+cat("下图分别展示了正、负离子模式下，质控样品的相关性。\n\n")
+if (file.exists(paste0(report_path, "/3.QC/2.correlation/correlation_single.pdf"))) {
+  cat('<div style="width: 100%; display: flex; flex-direction: column;">')
+  cat(sprintf('![](%s/3.QC/2.correlation/correlation_single.pdf){width=100%%, height=500px}', report_path))
+  cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">相关性图</div>')
+  cat('</div>\n\n')
+}
+cat('\n\n')
+
+cat("## QC的RSD \n\n")
+cat("相对标准偏差(RSD)是一种统计度量，表明数据集相对于其平均值的离散程度, 相对标准差的值越大，表明数据越分散。相对标准偏差越小，表明数据越接近其平均值。 QC样本相对丰度的相对标准偏差（RSD）越小，表明仪器的稳定性越好。本实验 QC 样本中 RSD≤30%的 Peak 数目占 QC 样本总 Peak 数目的比例在 80%以上，表明仪器分析系统稳定性较好。\n\n")
+if (file.exists(paste0(report_path, "/3.QC/3.RSD/RSD_single.png"))) {
+  cat(sprintf('![](%s/3.QC/3.RSD/RSD_single.png)', report_path))
+  cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">RSD图</div>')
+}
+cat('\n\n')
+
+cat("## QC和所有样本的PCA \n\n")
+cat("将所有实验样本和QC样本提取得到的峰进行PCA分析。QC样本差异越小说明整个方法稳定性越好数据质量越高，体现在PCA分析图上就是QC样本的分布会聚集在一起。\n\n")
+cat("下图分别展示了正、负离子模式下，总体样本的PCA图。\n\n")
+if (file.exists(paste0(report_path, "/3.QC/4.PCA/PCA_single.png"))) {
+  cat(sprintf('![](%s/3.QC/4.PCA/PCA_single.png)', report_path))
+  cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">PCA图</div>')
+}
+cat("注：图中横坐标PC1表示第一主成分解释度，纵坐标PC2第二主成分解释度，不同颜色的散点表示不同实验分组的样本，椭圆为95%的置信区间。\n\n")
+cat('\n\n')
+
+cat("## QC和所有样本的CV分布 \n\n")
+cat("统计学中的CV（Coefficient of Variation）代表变异系数，也称为离散系数或变差系数，是衡量数据离散程度的归一化相对指标。QC样本变异系数越小，表明仪器的稳定性越好。图中横坐标代表CV值，纵坐标表示小于对应CV值的Feature数目占总Feature数目的比例，QC为质控样本，与X轴平行的两条参考线对应Feature数量占总Feature数量的75%和85%。\n\n")
+if (file.exists(paste0(report_path, "/3.QC/6.CV/cv_single.png"))) {
+  cat(sprintf('![](%s/3.QC/6.CV/cv_single.png)', report_path))
+  cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">CV图</div>')
+}
+cat('\n\n')
+
+if (length(unique(sample.data[[ion_type]][["Condition"]][!grepl("qc", sample.data[[ion_type]][["Condition"]], ignore.case = T)]))>1){
+  
+  cat("# 多元统计分析 \n\n")
+  cat("采用多变量统计分析，可以在最大程度保留原始信息的基础上将高维复杂的数据进行“简化和降维”，建立可靠的数学模型对研究对象的代谢谱特点进行归纳和总结。首先采用无监督的主成分分析方法（Principal Component Analysis，PCA）来观察各样品之间的总体分布和组间的离散程度，然后用有监督的（正交）偏最小二乘法分析（(Orthogonal)Partial Least Squares Discrimination Analysis，(O)PLS-DA）来区分各组间代谢轮廓的总体差异，寻找组间的差异代谢物。OPLS-DA分析中，变量权重值（Variable important in projection, VIP）至少大于1的变量被认为是差异变量。为防止模型过拟合，100次置换检验的方法来考察模型的拟合效果。\n\n")
+  cat("多元统计分析结果见4.多元统计分析文件夹。 \n\n")
+
+  cat("## PCA {.tabset .tabset-fade .tabset-pills} \n\n")
+  cat("主成分分析（Principal Component Analysis，PCA）是一种常用的无监督降维算法，广泛应用于代谢组学数据分析中。其核心思想是通过线性变换，将原始高维代谢物数据转换为一组互不相关的低维主成分（Principal Components，PCs），同时尽可能保留原始数据的方差。在数据分析中，一般先采用PCA方法，观察组间样本的总体分布趋势和组间样本的差异度。\n\n")
+  cat("PCA 模型的相关参数见PCA 模型参数表：\n\n")
+  div(style = 'margin-bottom: 20px;', DT::datatable(sum_pca, rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T), caption = "比对组的PCA模型参数表")) %>% htmltools::tagList() %>% print()
+  cat("- **title**: 该模型对应的数据对象 \n\n")
+  cat("- **type**: 模型类型 \n\n")
+  cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+  cat("- **A**: 模型的主成分个数 \n\n")
+  cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想，一般认为R2X大于0.5说明模型效果较好 \n\n")
+
+for (group_name in c(group.data,"all")) {
+  
+  cat(paste0("### ", group_name, " \n\n"))
+  if (file.exists(paste0(report_path, "/4.多元统计分析/1.PCA/", group_name, "/single/PCA_", group_name, "_single.png"))) {
+    cat(sprintf('![%s_single](%s/4.多元统计分析/1.PCA/%s/single/PCA_%s_single.png){width=100%%}', group_name, report_path, group_name, group_name))
+    cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">PCA图</div>')
+  }
+  cat('\n\n')
+  
+}
+
+  cat("注：横坐标表示第一主成分解释度，纵坐标表示第二主成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表 95%置信区间。\n\n")
+  
+  cat("## PLS-DA {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("主成分分析法虽然能够有效地提取主要信息，但是对于相关性较小的变量不敏感，而偏最小二乘法判别分析（Partial Least Squares-Discriminant Analysis, PLS-DA）可以解决此问题。PLS-DA是一种有监督模式识别的多元统计分析方法，具体做法是在分析时对样品进行指定并分组，分组后模型会自动加上另外一个隐含的数据集Y，模拟分析数据矩阵(X)与Y值间的关系，去除不相关的噪音，这种模型计算的方法把各组分门别类可以使组间区分最大化，有利于寻找差异代谢物。正交偏最小二乘法判别分析（OPLS-DA）是PLS-DA的衍生算法，结合了正交信号矫正（OSC）和PLS-DA方法, 在建模时能够将X矩阵信息分解成与Y相关和不相关的两类信息，其中与Y相关的变量信息为预测主成分，与Y不相关的变量信息为正交主成分，通过去除不相关的差异来筛选差异变量，从而OPLS-DA可以更好地区分组间差异，提高模型的有效性和解析能力。在OPLS-DA得分图上，有两种主成分，即预测主成分和正交主成分。OPLS-DA将组间差异最大化的反映在t[1]上，所以从t[1]上能直接区分组间变异，而在正交主成分to[1]上则反映了组内的变异。\n\n")
+
+  cat("PLS-DA 模型的相关参数见PLS-DA 模型参数表：\n\n")
+  div(style = 'margin-bottom: 20px;', DT::datatable(sum_plsda, rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T), caption = "比对组的PLS-DA模型参数表")) %>% htmltools::tagList() %>% print()
+  cat("- **title**: 该模型对应的数据对象 \n\n")
+  cat("- **type**: 模型类型 \n\n")
+  cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+  cat("- **A**: 模型的主成分个数 \n\n")
+  cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想 \n\n")
+  cat("- **R2Y（cum）**: 模型的稳定性，该值越接近1越理想 \n\n")
+  cat("- **Q2（cum）**: 模型的预测率，该值越接近1越理想 \n\n")
+
+for (group_name in c(group.data, "all")) {
+  
+  cat(paste0("### ", group_name, " \n\n"))
+  if (file.exists(paste0(report_path, "/4.多元统计分析/2.PLS-DA/", group_name, "/single/PLS-DA_", group_name, "_single.png"))) {
+    cat(sprintf('![%s_single](%s/4.多元统计分析/2.PLS-DA/%s/single/PLS-DA_%s_single.png){width=100%%}', group_name, report_path, group_name, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">PLS-DA图</div>')
+  }
+  cat('\n\n')
+  
+  if (file.exists(paste0(report_path, "/4.多元统计分析/2.PLS-DA/", group_name, "/single/PLS-DA_", group_name, "_single_permutation_plot.png"))){
+    cat(sprintf('![%s_single](%s/4.多元统计分析/2.PLS-DA/%s/single/PLS-DA_%s_single_permutation_plot.png){width=100%%}', group_name, report_path, group_name, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">PLS-DA置换图</div>')
+  }
+  cat('\n\n')
+  
+}
+
+  cat("注：横坐标表示第一主成分解释度，纵坐标表示第二主成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表 95%置信区间。\n\n")
+  
+  cat("## OPLS-DA {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("主成分分析法虽然能够有效地提取主要信息，但是对于相关性较小的变量不敏感，而偏最小二乘法判别分析（Partial Least Squares-Discriminant Analysis, PLS-DA）可以解决此问题。PLS-DA是一种有监督模式识别的多元统计分析方法，具体做法是在分析时对样品进行指定并分组，分组后模型会自动加上另外一个隐含的数据集Y，模拟分析数据矩阵(X)与Y值间的关系，去除不相关的噪音，这种模型计算的方法把各组分门别类可以使组间区分最大化，有利于寻找差异代谢物。正交偏最小二乘法判别分析（OPLS-DA）是PLS-DA的衍生算法，结合了正交信号矫正（OSC）和PLS-DA方法, 在建模时能够将X矩阵信息分解成与Y相关和不相关的两类信息，其中与Y相关的变量信息为预测主成分，与Y不相关的变量信息为正交主成分，通过去除不相关的差异来筛选差异变量，从而OPLS-DA可以更好地区分组间差异，提高模型的有效性和解析能力。在OPLS-DA得分图上，有两种主成分，即预测主成分和正交主成分。OPLS-DA将组间差异最大化的反映在t[1]上，所以从t[1]上能直接区分组间变异，而在正交主成分to[1]上则反映了组内的变异。\n\n")
+
+  cat("OPLS-DA 模型的相关参数见OPLS-DA 模型参数表：\n\n")
+  div(style = 'margin-bottom: 20px;', DT::datatable(sum_oplsda, rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T), caption = "比对组的OPLS-DA模型参数表")) %>% htmltools::tagList() %>% print()
+  cat("- **title**: 该模型对应的数据对象 \n\n")
+  cat("- **type**: 模型类型 \n\n")
+  cat("- **N**: 模型的观测个数， 即为模型的样本数目 \n\n")
+  cat("- **A**: 模型的主成分个数+正交成分个数 \n\n")
+  cat("- **R2X（cum）**: 模型的解释率，该值越接近1越理想 \n\n")
+  cat("- **R2Y（cum）**: 模型的稳定性，该值越接近1越理想 \n\n")
+  cat("- **Q2（cum）**: 模型的预测率，该值越接近1越理想 \n\n")
+  
+  cat("置换检验（Permutation testing）是一种用来评价OPLS-DA模型准确性的随机排序方法，用来评判监督性学习方法获得分类不是偶然的。该方法固定X矩阵，将先前定义的分类Y矩阵的变量进行随机排列n次（一般100~1000次），每次排列组合后，构建新的OPLS-DA模型，计算相应的模型累积的R2Y和Q2值。将原始分类的Y矩阵、n次不同排列的Y矩阵与R2Y、Q2进行线性回归，得到的回归直线与y轴的截距值作为衡量模型是否过拟合的标准。通常Q2截距值小于0表明模型没有过拟合。\n\n")
+  
+for (group_name in group.data) {
+  
+  cat(paste0("### ", group_name, " \n\n"))
+  
+  if (file.exists(paste0(report_path, "/4.多元统计分析/3.OPLS-DA/", group_name, "/single/OPLS-DA_", group_name, "_single.png"))) {
+    
+    cat(sprintf('![%s_single](%s/4.多元统计分析/3.OPLS-DA/%s/single/OPLS-DA_%s_single.png){width=100%%}', group_name, report_path, group_name, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">OPLS-DA图</div>')
+    
+  }
+  
+  if (file.exists(paste0(report_path, "/4.多元统计分析/3.OPLS-DA/", group_name, "/single/OPLS-DA_", group_name, "_single_permutation_plot.png"))) {
+    
+    cat(sprintf('![%s_single](%s/4.多元统计分析/3.OPLS-DA/%s/single/OPLS-DA_%s_single_permutation_plot.png){width=100%%}', group_name, report_path, group_name, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">OPLS-DA 置换检验</div>')
+    
+  }
+  
+  cat('\n\n')
+  
+  if (file.exists(paste0(report_path, "/4.多元统计分析/3.OPLS-DA/", group_name, "/single/S-Plot_", group_name, "_single.png"))) {
+      cat(sprintf('![%s_single](%s/4.多元统计分析/3.OPLS-DA/%s/single/S-Plot_%s_single.png){width=100%%}', group_name, report_path, group_name, group_name))
+      cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">S-Plot图</div>')
+  }
+  
+}
+  
+  cat("注：图中横坐标表示置换检验的置换保留度（与原模型Y变量顺序一致的比例，置换保留度等于1处的点即为原模型的R2Y和Q2 值），纵坐标表示R2Y或Q2 的取值，绿色三角形表示置换检验得到的R2Y值，蓝色圆点表示置换检验得到的Q2值，两条虚线分别表示R2Y和Q2 的回归线。原模型R2Y非常接近1，说明建立的模型符合样本数据的真实情况；原模型Q2 非常接近1，说明如果有新样本加入模型，会得到近似的分布情况，总的来说原模型可以很好地解释两组样本之间的差异。置换检验随机模型的Q2值均小于原模型的Q2 值；Q2的回归线与纵轴的截距小于零；同时随着置换保留度逐渐降低，置换的Y变量比例增大，随机模型的Q2逐渐下降，且Q2截距值小于0，说明原模型具有良好的稳健性，不存在过拟合现象。\n\n")
+
+  cat("注：横坐标表示第一主成分解释度，纵坐标表示正交成分解释度，散点的颜色和形状表示样本的实验分组。椭圆代表 95%置信区间。\n\n")
+
+if (final_summary$diff_feature[which(final_summary$ion_type=="single")]%>%sum>0 & final_summary$diff_feature_name[which(final_summary$ion_type=="single")]%>%sum>0){
+  
+  cat("# 差异筛选 \n\n")
+  
+  cat("在本研究中，我们采用了多维统计分析和单维统计分析相结合的方式来筛选差异变量。单维统计分析方法包括假设检验（Hypothesis testing）和差异倍数（Fold Change, FC）分析，多维统计分析包括主成分分析（PCA），正交偏最小二乘法判别分析（OPLS-DA）等。单维统计分析可以避免数据预处理对原始数据的干扰，而监督性的多维统计方法如OPLS-DA可去除无关的信息，获得与某种因素直接相关的差异性变量。OPLS-DA模型得到的变量权重值（Variable Importance for the Projection, VIP）能够用于衡量各代谢物的表达模式对各组样本分类判别的影响强度和解释能力，挖掘具有生物学意义的差异代谢物分子。通常 VIP > 1的代谢物被认为在模型解释中具有显著贡献。两种统计分析方法的结合能提供更加可靠的实验结果。\n\n")
+
+  cat("## 分组差异结果表 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    cat(paste0('* [>打开单离子的表格](',url_path,'/5.差异代谢物分析/1.分组对比/',group_name,'/0.差异筛选表格/',group_name,'_组间对比_single.xlsx)\n\n'))
+    cat(" \n\n")
+    
+    data_diff <- read.xlsx(file.path(report_path, "5.差异代谢物分析/1.分组对比", group_name, "3.volcano", "volcano_name.xlsx"))%>%dplyr::arrange(desc(VIP))
+    
+    div(style = 'margin-bottom: 20px;', DT::datatable(data_diff[1:100, c("peak_name", "name", "pvalue", "adj_p_value", "FC", "Log2FC", "VIP", "difference")], rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+    
+    cat(" \n\n")
+    
+  }
+  
+  cat("## 聚类热图 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("表达趋势相同的代谢物在生物学上往往具有结果和功能相似性/互补性，或者受同一代谢通路的正调控/负调控，因此。对差异代谢物进行层次聚类分析，有助于我们将具有相同特征的代谢物归为一类，并发现代谢物在实验组间的变化特征。
+对每一组对比，我们对差异代谢物进行聚类，并以热力图进行展示。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    # NEG图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/1.HCA/heatmap.pdf){width=100%%, height=500px}', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature差异分析HCA图</div>')
+    cat('</div>')  # 结束NEG容器
+    # POS图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/1.HCA/heatmap_name.pdf){width=100%%, height=500px}', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name)差异分析HCA图</div>')
+    cat('</div>')  # 结束POS容器
+    cat('</div>\n\n')  # 结束主容器
+    
+  }
+  
+  cat("注：图中每列表示一个样品，每行表示一个代谢物，图中的颜色表示代谢物在该组样品中相对表达量的大小，红色代表该代谢物在该样品中表达量较高，蓝色代表表达量较低，具体表达量大小变化趋势请见右上方颜色条下的数字标注。左侧为代谢物聚类的树状图，右侧为代谢物的名称，两个代谢物分支离得越近，说明它们的表达量越接近；上方为样品聚类的树状图，下方为样品的名称，两个样品分支离的越近，说明这两个样品所有代谢物的表达模式越接近，即代谢物表达量变化趋势越接近。\n\n")
+  
+  cat("## 相关性分析 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("相关性分析是指对两个或多个具备相关性的变量元素进行分析，从而衡量两个变量因素的相关密切程度，两个变量之间的相关程度通过相关系数r来表示。相关系数r的值在-1和1之间，但可以是此范围内的任何值。正相关时，r值在0和1之间；负相关时，r值在-1和0之间。r的绝对值越接近1，两变量的关联程度越强，r的绝对值越接近0，两变量的关联程度越弱。\n\n")
+  
+  cat("相关性分析可以帮助衡量显著性差异代谢物之间的代谢密切程度，有利于进一步了解生物状态变化过程中代谢物之间的相互调节关系。具有表达相关性的代谢物，可能共同参与某一生物过程，即功能相关性；此外，不同代谢物之间具有协同或互斥关系，比如某类代谢物变化趋势相同，则为正相关；与某类代谢物变化趋势相反，则为负相关。正相关的代谢物也可能表明其来源于同一合成途径，负相关表明可能被分解用于其他代谢物的合成，即合成转化关系。\n\n")
+  
+  cat("对每一组对比，我们对差异代谢物的定量值进行相关系数计算，计算方法采用pearson方法，并以热力图形式进行展示。 \n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    # NEG图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/2.correlation/correlation_top20_features.pdf"))) {
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/2.correlation/correlation_top20_features.pdf){width=100%%, height=500px}', report_path, group_name))
+    }else{
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/2.correlation/correlation_features.pdf){width=100%%, height=500px}', report_path, group_name))
+    }
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature差异分析相关性图</div>')
+    cat('</div>')  # 结束NEG容器
+    # POS图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/2.correlation/correlation_top20_features_name.pdf"))) {
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/2.correlation/correlation_top20_features_name.pdf){width=100%%, height=500px}', report_path, group_name))
+    }else{
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/2.correlation/correlation_features_name.pdf){width=100%%, height=500px}', report_path, group_name))
+    }
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name)差异分析相关性图</div>')
+    cat('</div>')  # 结束POS容器
+    cat('</div>\n\n')  # 结束主容器
+    
+  }
+  
+  cat("注：每一行和每一列都分别表示一个代谢物，不同位置的色块表示对应位置代谢物的相关性系数大小。红色表示正相关，蓝色表示负相关，颜色越深表示相关性越强。\n\n")
+  
+  cat("## 火山图 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("火山图（Volcano Plot）主要用于展示代谢物在两组样品中的相对含量差异以及在统计学上差异的显著性，根据显著性变化的阈值为分界线，展示差异筛选后的代谢物上调下调情况。火山图中每个点代表一个代谢物，横坐标代表该组对比各物质的倍数变化（取以2为底的对数），纵坐标表VIP值。显著上调的代谢物以红色表示，显著下调的代谢物以蓝色表示，非显著差异的代谢物为灰色。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    # NEG图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/3.volcano/volcano.png){width=100%%}', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature差异分析火山图</div>')
+    cat('</div>')  # 结束NEG容器
+    # POS图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/3.volcano/volcano_name.png){width=100%%}', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name)差异分析火山图</div>')
+    cat('</div>')  # 结束POS容器
+    cat('</div>\n\n')  # 结束主容器
+    
+  }
+  
+  cat("注：火山图中每个点代表一个代谢物，横坐标代表该组对比各物质的倍数变化（取以2为底的对数），纵坐标表示t检验的P-value（取以10为底对数的负数），散点大小代表OPLS-DA模型的VIP值，散点的颜色表示上调和下调， 红色表示上调， 蓝色表示下调。\n\n")
+  
+  cat("## VIP {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("在OPLS-DA分析中， 变量权重值（Variable Importance for the Projection, VIP）能够用于衡量各代谢物的表达模式对各组样本分类判别的影响强度和解释能力，挖掘具有生物学意义的差异代谢物分子。\n\n")
+  
+  cat("对每一组对比，我们对差异代谢物VIP值以气泡图进行展示。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/4.VIP_analysis/VIP_distribution.png)', report_path, group_name))
+    cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">VIP</div>')
+    cat('\n\n')
+    
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/4.VIP_analysis/VIP_bubble.png)', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature VIP</div>')
+    cat('</div>')
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/4.VIP_analysis/VIP_bubble_name.png){width=100%%}', report_path, group_name))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name) VIP</div>')
+    cat('</div>')
+    cat('</div>\n\n')
+    
+  }
+  
+  cat("## 差异代谢物的Fold Change Rank图 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("代谢物差异倍数（Fold Change, FC）能够最直观反应对比组的代谢差异情况。为了展示FC的动态变化，将检测到的代谢物按FC值大小进行从小到大排序，绘制代谢物含量差异分布图，对筛选后上调和下调的前10个代谢物进行标注。横坐标表示每个代谢物按FC从小到大的排序值，纵坐标代表每个代谢物的log2FC，红色代表上调差异代谢物，蓝色代表下调差异代谢物，平行于X轴的两条辅助线代表FC筛选标准。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/7.差异代谢物的Rank图/feature_with_rank.png"))){
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/7.差异代谢物的Rank图/feature_with_rank.png)', report_path, group_name))
+    }
+    
+    cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">差异代谢物的Fold Change Rank</div>')
+    cat('\n\n')
+    
+  }
+  
+  cat("注：图中左侧横坐标是OPLS-DA 分析VIP值， 纵坐标是代谢物。图中点的大小代表VIP值的大小。\n\n")
+  
+  cat("## KEGG富集 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("KEGG（Kyoto Encyclopedia of Genes and Genomes）数据库有助于研究者把基因、表达信息以及代谢物含量作为一个整体网络来进行研究。作为有关Pathway的主要公共数据库，提供对代谢组学研究中检测到的代谢物进行功能注释和通路富集的生物信息学分析方法。其核心流程为首先通过数据预处理（如筛选差异代谢物）获得目标代谢物列表，然后将这些代谢物映射到 KEGG 数据库中预设的代谢通路、信号转导通路等功能通路中，利用超几何检验等统计方法计算各通路中代谢物的富集程度，并通过校正多重检验筛选出具有显著富集意义的通路，最终通过富集结果揭示代谢物在生物体内参与的主要生物学过程、调控网络及潜在功能，帮助研究者从通路水平理解代谢变化的生物学意义。\n\n")
+  
+  cat("本项目将注释到的KEGG ID提交到KEGG数据库，进一步注释代谢物所参与的代谢通路。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    if (file.exists(paste0(report_path, "/6.KEGG富集/", group_name, "/KEGG_enrichment.xlsx"))){
+      
+      kegg_enrich_data <- read.xlsx(paste0(report_path, "/6.KEGG富集/", group_name, "/KEGG_enrichment.xlsx"))
+      div(style = 'margin-bottom: 20px;', DT::datatable(kegg_enrich_data, rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+      cat('\n\n')
+      
+      cat("根据差异代谢物结果，进行KEGG通路富集。富集通常是分析一组代谢物在某个通路上检测到的显著性进行打分，分析的结论是基于一组相关的代谢物，因此，富集分析增加了研究的可靠性以及能够识别出与生物现象最相关的通路，导致样本性状差异的最重要的功能差别。P值表示差异代谢物在该通路中是否出现了富集。当P值小于某一个阈值时（一般设为0.05），我们认为该通路是可信的。\n\n")
+      
+      cat(sprintf('![](%s/6.KEGG富集/%s/KEGG_dotplot.png)', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">KEGG富集</div>')
+      
+    }
+    
+    cat('\n\n')
+    
+  }
+  
+  cat("注：KEGG富集分析图，纵坐标为通路名称，横坐标为倍数富集,气泡的大小表示该通路上富集到的差异代谢物的数目， 气泡的颜色表示通路富集分析的p值。\n\n")
+  
+  cat("## MSEA {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("KEGG富集分析是基于筛选后的差异代谢物的超几何分布富集，容易遗漏部分差异表达不显著，但又具有重要生物学意义的代谢物。为了能从整体代谢通路上反应所有代谢物的变化趋势，MSEA（Metabolite Set Enrichment Analysis）代谢集富集分析不需要指定明确的差异代谢物，重点挖掘代谢物丰度变化较低但仍对生物体调控具备主要意义的代谢物及其所在的代谢途径，此分析采用所有检测物质进行分析。\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    if (file.exists(paste0(report_path, "/7.MSEA/", group_name, "/MSEA_result.xlsx"))) {
+      
+      msea_data <- read.xlsx(paste0(report_path, "/7.MSEA/", group_name, "/MSEA_result.xlsx"))
+      div(style = 'margin-bottom: 20px;', DT::datatable(msea_data, rownames = F, options = list(dom = 'lfrtip', scroller = TRUE, scrollX = T))) %>% htmltools::tagList() %>% print()
+      cat('\n\n')
+      
+      cat(sprintf('![](%s/7.MSEA/%s/MSEA_dpi300.png)', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">MSEA富集</div>')
+      cat('\n\n')
+      
+    }
+    
+    if (file.exists(paste0(report_path, "/7.MSEA/", group_name, "/Top10Pathways_ES.pdf"))) {
+      
+      cat('<div style="width: 100%; display: flex; flex-direction: column;">')
+      cat(sprintf('![](%s/7.MSEA/%s/Top10Pathways_ES.pdf){width=100%%, height=500px}', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">MSEA Enrichment Score</div>')
+      cat('</div>\n\n')
+      
+    }
+    
+  }
+  
+  cat("注：纵坐标表示代谢集的名称，对应标注代谢集的 p-value 值；横坐标表示富集程度，颜色表示富集分析的 p 值，颜色越深 p 值越小，富集程度越显著。\n\n")
+  
+  cat("## 差异代谢物表达量 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat("通过组内差异筛选得到的代谢物，表达量的不同是最直观的差异维度。下面用箱线图展示了不同代谢物在两组里面的表达量对比，箱线图中间横线为代谢物在同组内表达量的中位数，中间的箱型表示四分位数的范围：\n\n")
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/5.差异代谢物表达量/Global_Metabolite_Comparison.pdf"))) {
+      
+      cat('<div style="width: 100%; display: flex; flex-direction: column;">')
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/5.差异代谢物表达量/Global_Metabolite_Comparison.pdf){width=100%%, height=500px}', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">差异代谢物表达量</div>')
+      cat('</div>\n\n')
+      
+    }
+    
+    
+  }
+  
+  cat("注：图中横纵表为样本名组别名称，纵坐标为样本中代谢物定量值取log2。\n\n")
+  
+  cat("## 差异网络分析 {.tabset .tabset-fade .tabset-pills} \n\n")
+  
+  cat(paste0("为了更清楚的展示差异代谢物之间的相关性，在相关性分析基础上对每个代谢物与其他代谢物的关联度进行网络分析，从而能直观的看出关键代谢物的节点重要程度，即关键代谢物能够影响多个其他代谢物，且程度不一，方便找出核心的调控代谢物。下面用网络图进行代谢物相关性展示： \n\n"))
+  
+  for (group_name in group.data) {
+    
+    cat(paste0("### ", group_name, " \n\n"))
+    
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/6.差异网络分析/Network_CytoscapeStyle.png"))) {
+      
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/6.差异网络分析/Network_CytoscapeStyle.png)', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">差异网络分析</div>')
+      cat('\n\n')
+      
+    }
+    
+    if (file.exists(paste0(report_path, "/5.差异代谢物分析/1.分组对比/", group_name, "/6.差异网络分析/Network_CytoscapeStyle_name.png"))) {
+      
+      cat(sprintf('![](%s/5.差异代谢物分析/1.分组对比/%s/6.差异网络分析/Network_CytoscapeStyle_name.png)', report_path, group_name))
+      cat('<div style="color: #666; font-size: 0.9em; margin-top: 8px; text-align: center;">差异代谢物(name)的网络图</div>')
+      cat('\n\n')
+      
+    }
+    
+  }
+  
+  cat("注：图中点代表差异代谢物，点的大小代表差异倍数绝对值的大小，点越大表示差异倍数越大。点的颜色代谢差异代谢物的上下调，蓝色为上调，红色下调，图中线条的颜色代表相关性，红色线条代表负相关，蓝色线条代表正相关。线条的粗细代表相关性系数绝对值的大小，线条越粗，相关性越大。 \n\n")
+  
+  if (length(group.data) >= 2 && length(group.data) <= 5) {
+    
+    cat("## 组间差异结果 {.tabset .tabset-fade .tabset-pills} \n\n")
+    
+    cat(paste0("### Venn \n\n"))
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    # NEG图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/2.组间对比/1.venn/Venn_diagram.png){width=100%%}', report_path))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature差异表达Venn图</div>')
+    cat('</div>')  # 结束NEG容器
+    # POS图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/2.组间对比/1.venn/Venn_diagram_name.png){width=100%%}', report_path))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name)差异分析Venn图</div>')
+    cat('</div>')  # 结束POS容器
+    cat('</div>\n\n')  # 结束主容器
+    cat("注：Venn 图：图中不同的圈，表示不同的对比组。\n\n")
+    
+  }
+  
+  if (length(group.data) >= 2){
+      
+    cat(paste0("### Upset \n\n"))
+    cat('<div style="display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px;">')
+    # NEG图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/2.组间对比/2.upset/UpSet_plot.png){width=100%%}', report_path))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">feature差异表达UpSet图</div>')
+    cat('</div>')  # 结束NEG容器
+    # POS图及标题
+    cat('<div style="width: 49%; display: flex; flex-direction: column;">')
+    cat(sprintf('![](%s/5.差异代谢物分析/2.组间对比/2.upset/UpSet_plot_name.png){width=100%%}', report_path))
+    cat('<div style="text-align: center; color: #666; font-size: 0.9em; margin-top: 8px;">代谢物(name)差异分析UpSet图</div>')
+    cat('</div>')  # 结束POS容器
+    cat('</div>\n\n')  # 结束主容器
+    cat("注：图的左侧柱状图展示各比较组中分别包含差异代谢物的个数；下方交集点的部分，用点指代左侧的对应比较组名称，通过纵向实现点与点之间的连接，表示对应数据集之间存在交集的情况；通过纵向的对应关系，对应上方柱状图，表示以上多个比较组中，连线的比较组与其他比较组相比，独有的代谢物个数。\n\n")
+    
+    }
+  
+}
+  
+}
+
+```

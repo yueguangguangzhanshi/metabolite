@@ -1,0 +1,201 @@
+---
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+    number_sections: yes
+    fig_caption: yes
+classoption: "hyperref,"
+css: './css.css'
+title: "Glycopeptide Quantitative analysis"
+---
+
+-----------------------------------------------
+
+<span style="">**Project name：`r para[["info"]][["project_name"]]`**</span>
+
+<span style="color: #888888;">*Project ID：`r para[["info"]][["project_id"]]`*</span>
+
+<span style="color: #888888;">*User：`r para[["info"]][["user"]]`*</span>
+
+-----------------------------------------------
+
+```{r include = FALSE}
+
+	datatable(
+	
+		data.frame('a' = 1:4, 'b' = 1:4)
+	
+	)
+
+```
+
+```{r include = FALSE}
+
+	htmltools::tagList(plot_ly(x = rnorm(10), type = "histogram"))
+
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("quant_pca_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# PCA Analysis \n\n")
+
+  cat("## PCA Plot \n\n")
+  
+  if (!is.null(result[["PCA"]])) {
+    
+    result[["PCA_p"]]%>% htmltools::tagList() %>% print
+
+	cat(" \n\n")
+	
+	cat("## PCA Result \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+	
+		result[["PCA"]], 
+		
+		extensions = 'Buttons',
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+		
+			scroller = TRUE, scrollX = T, scrollY = '400px'
+		
+		)
+	
+	)) %>% htmltools::tagList() %>% print()
+    
+  }
+  
+  cat(" \n\n")
+  
+}
+	
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("quant_oplsda_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# OPLS-DA \n\n")
+
+  cat("## OPLS-DA Plot \n\n")
+  
+  cat(paste0("![](",data_path,"/opls_da/OPLS_DA.svg)"))
+
+	cat(" \n\n")
+	
+	cat("## OPLS-DA Result \n\n")
+	
+	div(style = 'margin-bottom: 20px;',
+		
+			DT::datatable(
+	
+		result[["OPLS-DA"]], 
+		
+		extensions = 'Buttons',
+
+		options = list(dom = 'lBfrtip', 
+
+			buttons = c('csv', 'excel', 'pdf'),
+		
+			scroller = TRUE, scrollX = T, scrollY = T
+		
+		)
+	
+	)) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+	
+```
+
+```{r echo = FALSE, results = 'asis'}
+
+if ("quant_heatmap_check" %in% para[["info"]][["process_item"]] & "quant_volcano_check" %in% para[["info"]][["process_item"]]){
+  
+  cat("# Heatmap \n\n")
+
+  cat(paste0("![](",data_path,"/heatmap/Heatmap_diff.png)"))
+
+	cat(" \n\n")
+	
+	cat("## Heatmap Result \n\n")
+	
+	cat(" \n\n")
+	
+	div(style = 'margin-bottom: 100px;',
+		
+			DT::datatable(
+			
+				result[["Heatmap_diff"]], 
+				
+				extensions = 'Buttons',
+				
+				colnames=c("Glycopeptide"=1),
+
+				options = list(dom = 'lBfrtip', 
+
+					buttons = c('csv', 'excel', 'pdf'),
+				
+					scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+				)
+			
+			)
+		
+		) %>% htmltools::tagList() %>% print()
+	
+	cat(" \n\n")
+  
+}
+	
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+	
+	if(c("quant_volcano_check") %in% para[["info"]][["process_item"]]){
+	  
+	cat("# Volcano Plot {.tabset .tabset-fade .tabset-pills} \n\n")
+
+	temp <- lapply(para[["info"]][["group"]], function(i) {
+	
+		cat(paste0("## ", i, " \n\n"))
+	  
+	  result[["Volcano_p"]][[i]]%>% htmltools::tagList() %>% print
+	  
+	  cat(" \n\n")
+	
+	  div(style = 'margin-bottom: 100px;',
+	      
+	      DT::datatable(result[["Volcano"]][[i]], extensions = 'Buttons',
+
+			options = list(dom = 'lBfrtip', 
+
+				buttons = c('csv', 'excel', 'pdf'),
+				
+				colnames=c("No."=1),
+				
+				scroller = TRUE, scrollX = T, scrollY = '400px'
+				
+			)
+			
+		)%>% htmltools::tagList() %>% print)
+	  
+		cat(" \n\n")
+	
+	}) %>% unlist %>% unname
+	
+	cat(" \n\n")
+	  
+	}
+
+```
